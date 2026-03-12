@@ -3,14 +3,10 @@ from typing import Literal, Optional
 from datetime import datetime
 import re
 
-# ── Validators ────────────────────────────────────────────────────────────────
-
 def _validate_phone(v: str) -> str:
     if not re.fullmatch(r"\d{7,15}", v):
         raise ValueError("Phone must be 7-15 digits with no spaces or symbols")
     return v
-
-# ── User Schemas ──────────────────────────────────────────────────────────────
 
 class UserCreate(BaseModel):
     name         : str
@@ -31,37 +27,33 @@ class UserCreate(BaseModel):
             raise ValueError("Name cannot be blank")
         return v.strip()
 
-
 class UserLogin(BaseModel):
     phone    : str
-    password : Optional[str] = None   # required for admin/guard, not for member OTP
+    password : Optional[str] = None
 
     @field_validator("phone")
     @classmethod
     def phone_valid(cls, v): return _validate_phone(v)
 
-
 class GuardCreate(BaseModel):
     name         : str
     phone        : str
-    flat_no      : str = "GATE"       # guards don't have flats
-    password     : str                # admin sets default password
+    flat_no      : str = "GATE"
+    password     : str
+    role         : Literal["security", "admin"] = "security"
     society_name : Optional[str] = None
 
     @field_validator("phone")
     @classmethod
     def phone_valid(cls, v): return _validate_phone(v)
 
-
 class UserApprove(BaseModel):
     user_id : int
     action  : Literal["approved", "rejected"]
 
-
 class PasswordChange(BaseModel):
     user_id      : int
     new_password : str
-
 
 class UserResponse(BaseModel):
     id           : int
@@ -75,7 +67,6 @@ class UserResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
-
 class LoginResponse(BaseModel):
     message              : str
     user_id              : int
@@ -83,9 +74,6 @@ class LoginResponse(BaseModel):
     flat_no              : str
     status               : str
     must_change_password : bool = False
-
-
-# ── Visitor Schemas ───────────────────────────────────────────────────────────
 
 class VisitorCreate(BaseModel):
     visitor_name    : str
@@ -108,17 +96,14 @@ class VisitorCreate(BaseModel):
             raise ValueError("Field cannot be blank")
         return v.strip()
 
-
 class VisitorCheckout(BaseModel):
     visitor_id    : int
     checkout_time : str
     checkout_date : str
 
-
 class VisitorApprove(BaseModel):
     visitor_id : int
     action     : Literal["approved", "rejected"]
-
 
 class VisitorResponse(BaseModel):
     id              : int
@@ -138,10 +123,7 @@ class VisitorResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
-
-# ── Dashboard Schemas ─────────────────────────────────────────────────────────
-
 class DashboardFilter(BaseModel):
-    period      : Literal["day", "week", "month", "year"] = "day"
-    society_name: Optional[str] = None
-    flat_no     : Optional[str] = None
+    period       : Literal["day", "week", "month", "year"] = "day"
+    society_name : Optional[str] = None
+    flat_no      : Optional[str] = None
