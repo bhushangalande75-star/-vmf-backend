@@ -3,24 +3,22 @@ from typing import Literal, Optional
 from datetime import datetime
 import re
 
-
 # ── Validators ────────────────────────────────────────────────────────────────
 
 def _validate_phone(v: str) -> str:
-    # FIX: validate phone is digits only, 7–15 chars (E.164-style)
     if not re.fullmatch(r"\d{7,15}", v):
-        raise ValueError("Phone must be 7–15 digits with no spaces or symbols")
+        raise ValueError("Phone must be 7-15 digits with no spaces or symbols")
     return v
-
 
 # ── User Schemas ──────────────────────────────────────────────────────────────
 
 class UserCreate(BaseModel):
-    name    : str
-    phone   : str
-    flat_no : str
-    # FIX: restrict role to known values instead of accepting any string
-    role    : Literal["admin", "security", "member"]
+    name         : str
+    phone        : str
+    flat_no      : str
+    role         : Literal["superadmin", "admin", "security", "member"]
+    password     : Optional[str] = None
+    society_name : Optional[str] = None
 
     @field_validator("phone")
     @classmethod
@@ -35,40 +33,69 @@ class UserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    phone: str
+    phone    : str
+    password : Optional[str] = None   # required for admin/guard, not for member OTP
 
     @field_validator("phone")
     @classmethod
     def phone_valid(cls, v): return _validate_phone(v)
 
 
-# Response model — never expose internal columns you don't intend to share
+class GuardCreate(BaseModel):
+    name         : str
+    phone        : str
+    flat_no      : str = "GATE"       # guards don't have flats
+    password     : str                # admin sets default password
+    society_name : Optional[str] = None
+
+    @field_validator("phone")
+    @classmethod
+    def phone_valid(cls, v): return _validate_phone(v)
+
+
+class UserApprove(BaseModel):
+    user_id : int
+    action  : Literal["approved", "rejected"]
+
+
+class PasswordChange(BaseModel):
+    user_id      : int
+    new_password : str
+
+
 class UserResponse(BaseModel):
-    id         : int
-    name       : str
-    phone      : str
-    flat_no    : str
-    role       : str
-    created_at : datetime
+    id           : int
+    name         : str
+    phone        : str
+    flat_no      : str
+    role         : str
+    status       : str
+    society_name : Optional[str]
+    created_at   : datetime
 
     model_config = {"from_attributes": True}
 
 
 class LoginResponse(BaseModel):
-    message  : str
-    user_id  : int
-    role     : str
-    flat_no  : str
+    message              : str
+    user_id              : int
+    role                 : str
+    flat_no              : str
+    status               : str
+    must_change_password : bool = False
 
 
 # ── Visitor Schemas ───────────────────────────────────────────────────────────
 
 class VisitorCreate(BaseModel):
-    visitor_name : str
-    phone        : str
-    flat_no      : str
-    visitor_type : str
-    logged_by    : Optional[int] = None   # security guard user ID
+    visitor_name    : str
+    phone           : str
+    flat_no         : str
+    visitor_type    : str
+    logged_by       : Optional[int] = None
+    checkin_time    : Optional[str] = None
+    checkin_date    : Optional[str] = None
+    is_prescheduled : bool = False
 
     @field_validator("phone")
     @classmethod
@@ -82,21 +109,39 @@ class VisitorCreate(BaseModel):
         return v.strip()
 
 
+class VisitorCheckout(BaseModel):
+    visitor_id    : int
+    checkout_time : str
+    checkout_date : str
+
+
 class VisitorApprove(BaseModel):
     visitor_id : int
-    # FIX: only allow these two values — previously any string was accepted
     action     : Literal["approved", "rejected"]
 
 
 class VisitorResponse(BaseModel):
-    id           : int
-    visitor_name : str
-    phone        : str
-    flat_no      : str
-    visitor_type : str
-    status       : str
-    logged_by    : Optional[int]
-    created_at   : datetime
-    updated_at   : datetime
+    id              : int
+    visitor_name    : str
+    phone           : str
+    flat_no         : str
+    visitor_type    : str
+    status          : str
+    is_prescheduled : bool
+    checkin_time    : Optional[str]
+    checkout_time   : Optional[str]
+    checkin_date    : Optional[str]
+    checkout_date   : Optional[str]
+    logged_by       : Optional[int]
+    created_at      : datetime
+    updated_at      : datetime
 
     model_config = {"from_attributes": True}
+
+
+# ── Dashboard Schemas ─────────────────────────────────────────────────────────
+
+class DashboardFilter(BaseModel):
+    period      : Literal["day", "week", "month", "year"] = "day"
+    society_name: Optional[str] = None
+    flat_no     : Optional[str] = None
