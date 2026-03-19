@@ -65,26 +65,24 @@ async def send_fcm_notification(token: str, title: str, body: str, data: dict):
             return
 
         print(f"[FCM] Got access token, sending notification...")
+
+        # Data-only message — no notification field
+        # This prevents Firebase from showing its own notification
+        # Flutter handles the notification with ringtone
         payload = {
             "message": {
-                "token": token,
-                "notification": {
-                    "title": title,
-                    "body" : body,
-                },
+                "token"  : token,
                 "android": {
                     "priority": "high",
-                    "notification": {
-                        "sound"               : "visitor_alert",
-                        "channel_id"          : "visitor_alerts",
-                        "notification_priority": "PRIORITY_MAX",
-                        "visibility"          : "PUBLIC",
-                        "default_sound"       : False,
-                    },
                 },
-                "data": {k: str(v) for k, v in data.items()},
+                "data": {
+                    "title"     : title,
+                    "body"      : body,
+                    **{k: str(v) for k, v in data.items()},
+                },
             }
         }
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 url,
