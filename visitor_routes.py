@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from database import get_db
 import models, schemas
+import httpx
+import os
+import json
 
 router = APIRouter(prefix="/visitor", tags=["Visitors"])
 
@@ -23,11 +25,71 @@ def _date_filter(q, model, period: str):
         return q
     return q.filter(model.created_at >= start)
 
+async def get_fcm_access_token() -> str:
+    import google.auth
+    import google.auth.transport.requests
+    from google.oauth2 import service_account
 
-# ── Guard logs visitor ────────────────────────────────────────────────────────
+    sa_json = os.getenv("FIREBASE_SERVICE_ACCOUNT", "")
+    if not sa_json:
+        return ""
+    try:
+        sa_info = json.loads(sa_json)
+        credentials = service_account.Credentials.from_service_account_info(
+            sa_info,
+            scopes=["https://www.googleapis.com/auth/firebase.messaging"],
+        )
+        request = google.auth.transport.requests.Request()
+        credentials.refresh(request)
+        return credentials.token or ""
+    except Exception as e:
+        print(f"FCM token error: {e}")
+        return ""
+
+async def send_fcm_notification(token: str, title: str, body: str, data: dict):
+    if not token:
+        return
+    try:
+        sa_json    = os.getenv("FIREBASE_SERVICE_ACCOUNT", "")
+        if not sa_json:
+            return
+        sa_info    = json.loads(sa_json)
+        project_id = sa_info.get("project_id", "")
+        url        = f"https://fcm.googleapis.com/v1/projects/{project_id}/messages:send"
+        access_token = await get_fcm_access_token()
+        if not access_token:
+            return
+        payload = {
+            "message": {
+                "token"       : token,
+                "notification": {"title": title, "body": body},
+                "android"     : {
+                    "priority": "high",
+                    "notification": {
+                        "sound"             : "default",
+                        "channel_id"        : "visitor_alerts",
+                        "notification_priority": "PRIORITY_MAX",
+                        "visibility"        : "PUBLIC",
+                    },
+                },
+                "data": {k: str(v) for k, v in data.items()},
+            }
+        }
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                url,
+                json   = payload,
+                headers= {
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type" : "application/json",
+                },
+                timeout=10,
+            )
+    except Exception as e:
+        print(f"FCM send failed: {e}")
 
 @router.post("/create", response_model=schemas.VisitorResponse, status_code=201)
-def create_visitor(visitor: schemas.VisitorCreate, db: Session = Depends(get_db)):
+async def create_visitor(visitor: schemas.VisitorCreate, db: Session = Depends(get_db)):
     if visitor.logged_by is not None:
         guard = db.query(models.User).filter(models.User.id == visitor.logged_by).first()
         if not guard:
@@ -51,10 +113,26 @@ def create_visitor(visitor: schemas.VisitorCreate, db: Session = Depends(get_db)
     db.add(new_visitor)
     db.commit()
     db.refresh(new_visitor)
+
+    # Send FCM notification to resident
+    if not visitor.is_prescheduled:
+        resident = db.query(models.User).filter(
+            models.User.flat_no == visitor.flat_no,
+            models.User.role    == "member",
+            models.User.status  == "active",
+        ).first()
+        if resident and resident.fcm_token:
+            await send_fcm_notification(
+                token = resident.fcm_token,
+                title = "Visitor at Gate 🔔",
+                body  = f"{new_visitor.visitor_name} ({new_visitor.visitor_type}) is at the gate. Approve?",
+                data  = {
+                    "visitor_id": str(new_visitor.id),
+                    "flat_no"   : new_visitor.flat_no,
+                    "type"      : "visitor_request",
+                },
+            )
     return new_visitor
-
-
-# ── Resident pre-schedules visitor ───────────────────────────────────────────
 
 @router.post("/preschedule", response_model=schemas.VisitorResponse, status_code=201)
 def preschedule_visitor(visitor: schemas.VisitorCreate, db: Session = Depends(get_db)):
@@ -74,9 +152,6 @@ def preschedule_visitor(visitor: schemas.VisitorCreate, db: Session = Depends(ge
     db.refresh(new_visitor)
     return new_visitor
 
-
-# ── Guard checks out visitor ──────────────────────────────────────────────────
-
 @router.post("/checkout", response_model=schemas.VisitorResponse)
 def checkout_visitor(data: schemas.VisitorCheckout, db: Session = Depends(get_db)):
     visitor = db.query(models.Visitor).filter(models.Visitor.id == data.visitor_id).first()
@@ -84,15 +159,11 @@ def checkout_visitor(data: schemas.VisitorCheckout, db: Session = Depends(get_db
         raise HTTPException(status_code=404, detail="Visitor not found")
     if visitor.checkout_time:
         raise HTTPException(status_code=409, detail="Visitor already checked out")
-
     visitor.checkout_time = data.checkout_time
     visitor.checkout_date = data.checkout_date
     db.commit()
     db.refresh(visitor)
     return visitor
-
-
-# ── Resident approves/rejects guard request ───────────────────────────────────
 
 @router.post("/approve", response_model=schemas.VisitorResponse)
 def approve_visitor(data: schemas.VisitorApprove, db: Session = Depends(get_db)):
@@ -102,14 +173,10 @@ def approve_visitor(data: schemas.VisitorApprove, db: Session = Depends(get_db))
     if visitor.status != "pending":
         raise HTTPException(status_code=409,
             detail=f"Visitor request is already '{visitor.status}'")
-
     visitor.status = data.action
     db.commit()
     db.refresh(visitor)
     return visitor
-
-
-# ── List visitors ─────────────────────────────────────────────────────────────
 
 @router.get("/list", response_model=List[schemas.VisitorResponse])
 def list_visitors(
@@ -129,33 +196,26 @@ def list_visitors(
         q = _date_filter(q, models.Visitor, period)
     return q.order_by(models.Visitor.created_at.desc()).offset(skip).limit(limit).all()
 
-
-# ── Dashboard metrics ─────────────────────────────────────────────────────────
-
 @router.get("/dashboard/metrics")
 def dashboard_metrics(
-    period      : str           = Query("day"),
-    flat_no     : Optional[str] = Query(None),
-    db          : Session       = Depends(get_db),
+    period : str           = Query("day"),
+    flat_no: Optional[str] = Query(None),
+    db     : Session       = Depends(get_db),
 ):
     q = db.query(models.Visitor)
     if flat_no:
         q = q.filter(models.Visitor.flat_no == flat_no)
     q = _date_filter(q, models.Visitor, period)
-
     all_visitors = q.all()
     return {
-        "period"         : period,
-        "total"          : len(all_visitors),
-        "pending"        : sum(1 for v in all_visitors if v.status == "pending"),
-        "approved"       : sum(1 for v in all_visitors if v.status == "approved"),
-        "rejected"       : sum(1 for v in all_visitors if v.status == "rejected"),
-        "prescheduled"   : sum(1 for v in all_visitors if v.is_prescheduled),
-        "checked_out"    : sum(1 for v in all_visitors if v.checkout_time),
+        "period"      : period,
+        "total"       : len(all_visitors),
+        "pending"     : sum(1 for v in all_visitors if v.status == "pending"),
+        "approved"    : sum(1 for v in all_visitors if v.status == "approved"),
+        "rejected"    : sum(1 for v in all_visitors if v.status == "rejected"),
+        "prescheduled": sum(1 for v in all_visitors if v.is_prescheduled),
+        "checked_out" : sum(1 for v in all_visitors if v.checkout_time),
     }
-
-
-# ── Get single visitor ────────────────────────────────────────────────────────
 
 @router.get("/{visitor_id}", response_model=schemas.VisitorResponse)
 def get_visitor(visitor_id: int, db: Session = Depends(get_db)):

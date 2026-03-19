@@ -9,7 +9,6 @@ from user_routes    import router as user_router
 
 def run_migrations():
     with engine.connect() as conn:
-        # Add missing columns to users table if they don't exist
         migrations = [
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'active'",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS password VARCHAR",
@@ -17,7 +16,7 @@ def run_migrations():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by INTEGER",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE",
-            # Add missing columns to visitors table
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token VARCHAR",
             "ALTER TABLE visitors ADD COLUMN IF NOT EXISTS is_prescheduled BOOLEAN DEFAULT FALSE",
             "ALTER TABLE visitors ADD COLUMN IF NOT EXISTS checkin_time VARCHAR",
             "ALTER TABLE visitors ADD COLUMN IF NOT EXISTS checkout_time VARCHAR",
