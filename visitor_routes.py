@@ -67,15 +67,19 @@ async def send_fcm_notification(token: str, title: str, body: str, data: dict):
         print(f"[FCM] Got access token, sending notification...")
         payload = {
             "message": {
-                "token"       : token,
-                "notification": {"title": title, "body": body},
-                "android"     : {
-                    "priority"    : "high",
+                "token": token,
+                "notification": {
+                    "title": title,
+                    "body" : body,
+                },
+                "android": {
+                    "priority": "high",
                     "notification": {
-                        "sound"               : "default",
+                        "sound"               : "visitor_alert",
                         "channel_id"          : "visitor_alerts",
                         "notification_priority": "PRIORITY_MAX",
                         "visibility"          : "PUBLIC",
+                        "default_sound"       : False,
                     },
                 },
                 "data": {k: str(v) for k, v in data.items()},
@@ -84,12 +88,12 @@ async def send_fcm_notification(token: str, title: str, body: str, data: dict):
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 url,
-                json   = payload,
-                headers= {
+                json    = payload,
+                headers = {
                     "Authorization": f"Bearer {access_token}",
                     "Content-Type" : "application/json",
                 },
-                timeout=10,
+                timeout = 10,
             )
             print(f"[FCM] Response: {response.status_code} - {response.text}")
     except Exception as e:
@@ -141,7 +145,7 @@ async def create_visitor(visitor: schemas.VisitorCreate, db: Session = Depends(g
             print(f"[FCM] Sending notification...")
             await send_fcm_notification(
                 token = resident.fcm_token,
-                title = "Visitor at Gate",
+                title = "Visitor at Gate 🔔",
                 body  = f"{new_visitor.visitor_name} ({new_visitor.visitor_type}) is at the gate. Approve?",
                 data  = {
                     "visitor_id": str(new_visitor.id),
