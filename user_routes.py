@@ -12,7 +12,8 @@ def _hash(password: str) -> str:
 
 @router.post("/create", response_model=schemas.UserResponse, status_code=201)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    existing = db.query(models.User).filter(models.User.phone == user.phone).first()
+    existing = db.query(models.User).filter(
+        models.User.phone == user.phone).first()
     if existing:
         raise HTTPException(status_code=409,
             detail=f"Phone {user.phone} already registered")
@@ -24,6 +25,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         role         = user.role,
         status       = user_status,
         society_name = user.society_name,
+        society_id   = user.society_id,
         password     = _hash(user.password) if user.password else None,
     )
     db.add(new_user)
@@ -33,7 +35,8 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 @router.post("/create-guard", response_model=schemas.UserResponse, status_code=201)
 def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
-    existing = db.query(models.User).filter(models.User.phone == data.phone).first()
+    existing = db.query(models.User).filter(
+        models.User.phone == data.phone).first()
     if existing:
         raise HTTPException(status_code=409,
             detail=f"Phone {data.phone} already registered")
@@ -44,6 +47,7 @@ def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
         role                 = data.role,
         status               = "active",
         society_name         = data.society_name,
+        society_id           = data.society_id,
         password             = _hash(data.password),
         must_change_password = True if data.role == "security" else False,
     )
@@ -54,7 +58,8 @@ def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
 
 @router.post("/login", response_model=schemas.LoginResponse)
 def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
-    db_user = db.query(models.User).filter(models.User.phone == user.phone).first()
+    db_user = db.query(models.User).filter(
+        models.User.phone == user.phone).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
     if db_user.role in ("admin", "security", "superadmin"):
@@ -73,23 +78,28 @@ def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
         "role"                 : db_user.role,
         "flat_no"              : db_user.flat_no,
         "status"               : db_user.status,
+        "society_id"           : db_user.society_id,
+        "society_name"         : db_user.society_name,
         "must_change_password" : db_user.must_change_password or False,
     }
 
 @router.post("/approve")
 def approve_user(data: schemas.UserApprove, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == data.user_id).first()
+    user = db.query(models.User).filter(
+        models.User.id == data.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     if user.status != "pending":
-        raise HTTPException(status_code=409, detail="User is not pending approval")
+        raise HTTPException(status_code=409,
+            detail="User is not pending approval")
     user.status = "active" if data.action == "approved" else "inactive"
     db.commit()
     return {"message": f"User {data.action} successfully"}
 
 @router.post("/change-password")
 def change_password(data: schemas.PasswordChange, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == data.user_id).first()
+    user = db.query(models.User).filter(
+        models.User.id == data.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user.password             = _hash(data.new_password)
@@ -103,7 +113,8 @@ def update_fcm_token(
     fcm_token: str = Query(...),
     db       : Session = Depends(get_db)
 ):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    user = db.query(models.User).filter(
+        models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user.fcm_token = fcm_token
@@ -111,26 +122,35 @@ def update_fcm_token(
     return {"message": "Token updated"}
 
 @router.get("/pending/list")
-def pending_users(db: Session = Depends(get_db)):
-    users = db.query(models.User).filter(models.User.status == "pending").all()
-    return users
+def pending_users(
+    society_id: Optional[int] = None,
+    db        : Session = Depends(get_db)
+):
+    q = db.query(models.User).filter(models.User.status == "pending")
+    if society_id:
+        q = q.filter(models.User.society_id == society_id)
+    return q.all()
 
 @router.get("/list/all")
 def list_users(
-    role        : Optional[str] = None,
+    role       : Optional[str] = None,
+    society_id : Optional[int] = None,
     society_name: Optional[str] = None,
-    db          : Session = Depends(get_db)
+    db         : Session = Depends(get_db)
 ):
     q = db.query(models.User)
     if role:
         q = q.filter(models.User.role == role)
+    if society_id:
+        q = q.filter(models.User.society_id == society_id)
     if society_name:
         q = q.filter(models.User.society_name == society_name)
     return q.all()
 
 @router.delete("/{user_id}")
 def delete_user(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    user = db.query(models.User).filter(
+        models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     db.delete(user)
@@ -139,7 +159,8 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{user_id}", response_model=schemas.UserResponse)
 def get_user(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.id == user_id).first()
+    user = db.query(models.User).filter(
+        models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user

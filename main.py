@@ -4,8 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 import models
 from database import engine
-from visitor_routes import router as visitor_router
-from user_routes    import router as user_router
+from visitor_routes  import router as visitor_router
+from user_routes     import router as user_router
+from society_routes  import router as society_router
 
 def run_migrations():
     with engine.connect() as conn:
@@ -13,16 +14,18 @@ def run_migrations():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'active'",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS password VARCHAR",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS society_name VARCHAR",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS society_id INTEGER",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token VARCHAR",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by INTEGER",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE",
-            "ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token VARCHAR",
             "ALTER TABLE visitors ADD COLUMN IF NOT EXISTS is_prescheduled BOOLEAN DEFAULT FALSE",
             "ALTER TABLE visitors ADD COLUMN IF NOT EXISTS checkin_time VARCHAR",
             "ALTER TABLE visitors ADD COLUMN IF NOT EXISTS checkout_time VARCHAR",
             "ALTER TABLE visitors ADD COLUMN IF NOT EXISTS checkin_date VARCHAR",
             "ALTER TABLE visitors ADD COLUMN IF NOT EXISTS checkout_date VARCHAR",
             "ALTER TABLE visitors ADD COLUMN IF NOT EXISTS approved_by INTEGER",
+            "ALTER TABLE visitors ADD COLUMN IF NOT EXISTS society_id INTEGER",
         ]
         for migration in migrations:
             try:
@@ -38,10 +41,9 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(
-    title       = "Visitor Management System",
-    description = "Backend API for VMF Society Visitor Management",
-    version     = "2.0.0",
-    lifespan    = lifespan,
+    title    = "Visitor Management System",
+    version  = "3.0.0",
+    lifespan = lifespan,
 )
 
 app.add_middleware(
@@ -52,9 +54,10 @@ app.add_middleware(
     allow_headers     = ["*"],
 )
 
+app.include_router(society_router)
 app.include_router(visitor_router)
 app.include_router(user_router)
 
 @app.get("/", tags=["Health"])
 def home():
-    return {"message": "VMF Backend Running", "version": "2.0.0"}
+    return {"message": "VMF Backend Running", "version": "3.0.0"}

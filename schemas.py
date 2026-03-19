@@ -1,12 +1,29 @@
 from pydantic import BaseModel, field_validator
-from typing import Literal, Optional
+from typing import Literal, Optional, List
 from datetime import datetime
 import re
 
 def _validate_phone(v: str) -> str:
     if not re.fullmatch(r"\d{7,15}", v):
-        raise ValueError("Phone must be 7-15 digits with no spaces or symbols")
+        raise ValueError("Phone must be 7-15 digits")
     return v
+
+# ── Society Schemas ───────────────────────────────────────────────────────────
+
+class SocietyCreate(BaseModel):
+    name    : str
+    address : str
+
+class SocietyResponse(BaseModel):
+    id        : int
+    name      : str
+    address   : str
+    is_active : bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+# ── User Schemas ──────────────────────────────────────────────────────────────
 
 class UserCreate(BaseModel):
     name         : str
@@ -15,6 +32,7 @@ class UserCreate(BaseModel):
     role         : Literal["superadmin", "admin", "security", "member"]
     password     : Optional[str] = None
     society_name : Optional[str] = None
+    society_id   : Optional[int] = None
 
     @field_validator("phone")
     @classmethod
@@ -42,6 +60,7 @@ class GuardCreate(BaseModel):
     password     : str
     role         : Literal["security", "admin"] = "security"
     society_name : Optional[str] = None
+    society_id   : Optional[int] = None
 
     @field_validator("phone")
     @classmethod
@@ -63,6 +82,7 @@ class UserResponse(BaseModel):
     role         : str
     status       : str
     society_name : Optional[str]
+    society_id   : Optional[int]
     created_at   : datetime
 
     model_config = {"from_attributes": True}
@@ -73,7 +93,11 @@ class LoginResponse(BaseModel):
     role                 : str
     flat_no              : str
     status               : str
+    society_id           : Optional[int] = None
+    society_name         : Optional[str] = None
     must_change_password : bool = False
+
+# ── Visitor Schemas ───────────────────────────────────────────────────────────
 
 class VisitorCreate(BaseModel):
     visitor_name    : str
@@ -84,6 +108,7 @@ class VisitorCreate(BaseModel):
     checkin_time    : Optional[str] = None
     checkin_date    : Optional[str] = None
     is_prescheduled : bool = False
+    society_id      : Optional[int] = None
 
     @field_validator("phone")
     @classmethod
@@ -118,12 +143,8 @@ class VisitorResponse(BaseModel):
     checkin_date    : Optional[str]
     checkout_date   : Optional[str]
     logged_by       : Optional[int]
+    society_id      : Optional[int]
     created_at      : datetime
     updated_at      : datetime
 
     model_config = {"from_attributes": True}
-
-class DashboardFilter(BaseModel):
-    period       : Literal["day", "week", "month", "year"] = "day"
-    society_name : Optional[str] = None
-    flat_no      : Optional[str] = None
