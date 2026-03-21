@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
@@ -7,6 +8,10 @@ import models, schemas
 import httpx
 import os
 import json
+import io
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
 router = APIRouter(prefix="/visitor", tags=["Visitors"])
 
@@ -65,10 +70,6 @@ async def send_fcm_notification(token: str, title: str, body: str, data: dict):
             return
 
         print(f"[FCM] Got access token, sending notification...")
-
-        # Data-only message — no notification field
-        # This prevents Firebase from showing its own notification
-        # Flutter handles the notification with ringtone
         payload = {
             "message": {
                 "token"  : token,
@@ -76,13 +77,12 @@ async def send_fcm_notification(token: str, title: str, body: str, data: dict):
                     "priority": "high",
                 },
                 "data": {
-                    "title"     : title,
-                    "body"      : body,
+                    "title": title,
+                    "body" : body,
                     **{k: str(v) for k, v in data.items()},
                 },
             }
         }
-
         async with httpx.AsyncClient() as client:
             response = await client.post(
                 url,
@@ -125,7 +125,6 @@ async def create_visitor(visitor: schemas.VisitorCreate, db: Session = Depends(g
     db.commit()
     db.refresh(new_visitor)
 
-    # Send FCM notification to resident
     if not visitor.is_prescheduled:
         print(f"[FCM] Looking for resident at flat: {new_visitor.flat_no}")
         resident = db.query(models.User).filter(
@@ -203,6 +202,128 @@ def approve_visitor(data: schemas.VisitorApprove, db: Session = Depends(get_db))
     db.refresh(visitor)
     return visitor
 
+@router.get("/export/excel")
+def export_visitors_excel(
+    from_date  : Optional[str] = Query(None),
+    to_date    : Optional[str] = Query(None),
+    society_id : Optional[int] = Query(None),
+    flat_no    : Optional[str] = Query(None),
+    status     : Optional[str] = Query(None),
+    db         : Session       = Depends(get_db),
+):
+    q = db.query(models.Visitor)
+
+    if from_date:
+        try:
+            fd = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            q  = q.filter(models.Visitor.created_at >= fd)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid from_date. Use YYYY-MM-DD")
+
+    if to_date:
+        try:
+            td = datetime.strptime(to_date, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, tzinfo=timezone.utc)
+            q  = q.filter(models.Visitor.created_at <= td)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid to_date. Use YYYY-MM-DD")
+
+    if society_id: q = q.filter(models.Visitor.society_id == society_id)
+    if flat_no:    q = q.filter(models.Visitor.flat_no     == flat_no)
+    if status:     q = q.filter(models.Visitor.status      == status)
+
+    visitors = q.order_by(models.Visitor.created_at.desc()).all()
+
+    # ── Build Excel workbook ───────────────────────────────────────────────────
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Visitor Report"
+
+    header_fill  = PatternFill("solid", fgColor="1A6B3A")
+    header_font  = Font(bold=True, color="FFFFFF", size=11)
+    alt_fill     = PatternFill("solid", fgColor="E8F5EC")
+    center_align = Alignment(horizontal="center", vertical="center")
+    left_align   = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    thin_border  = Border(
+        left  =Side(style="thin", color="CCCCCC"),
+        right =Side(style="thin", color="CCCCCC"),
+        top   =Side(style="thin", color="CCCCCC"),
+        bottom=Side(style="thin", color="CCCCCC"),
+    )
+
+    # Row 1 — Title
+    ws.merge_cells("A1:L1")
+    ws["A1"]           = "VMF — Visitor Management Report"
+    ws["A1"].font      = Font(bold=True, size=14, color="1A6B3A")
+    ws["A1"].alignment = center_align
+    ws.row_dimensions[1].height = 30
+
+    # Row 2 — Date range info
+    ws.merge_cells("A2:L2")
+    ws["A2"]           = f"Period: {from_date or 'All'} to {to_date or 'All'}  |  Total Records: {len(visitors)}"
+    ws["A2"].font      = Font(size=10, color="666666", italic=True)
+    ws["A2"].alignment = center_align
+    ws.row_dimensions[2].height = 18
+    ws.row_dimensions[3].height = 5
+
+    # Row 4 — Headers
+    headers    = ["Sr No","Visitor Name","Phone","Flat No","Visitor Type",
+                  "Status","Check-in Date","Check-in Time",
+                  "Check-out Date","Check-out Time","Pre-Scheduled","Logged At"]
+    col_widths = [7, 22, 14, 12, 14, 12, 14, 12, 14, 12, 13, 20]
+
+    for col, (header, width) in enumerate(zip(headers, col_widths), 1):
+        cell           = ws.cell(row=4, column=col, value=header)
+        cell.font      = header_font
+        cell.fill      = header_fill
+        cell.alignment = center_align
+        cell.border    = thin_border
+        ws.column_dimensions[get_column_letter(col)].width = width
+    ws.row_dimensions[4].height = 22
+
+    status_colors = {"approved":"2ECC71","rejected":"E74C3C","pending":"F39C12"}
+
+    for i, v in enumerate(visitors, 1):
+        row   = 4 + i
+        fill  = alt_fill if i % 2 == 0 else PatternFill("solid", fgColor="FFFFFF")
+        created = v.created_at.strftime("%d-%m-%Y %H:%M") if v.created_at else ""
+
+        data_row = [
+            i,
+            v.visitor_name,
+            v.phone,
+            v.flat_no,
+            v.visitor_type,
+            v.status.upper(),
+            v.checkin_date  or "—",
+            v.checkin_time  or "—",
+            v.checkout_date or "—",
+            v.checkout_time or "—",
+            "Yes" if v.is_prescheduled else "No",
+            created,
+        ]
+        for col, value in enumerate(data_row, 1):
+            cell           = ws.cell(row=row, column=col, value=value)
+            cell.fill      = fill
+            cell.border    = thin_border
+            cell.alignment = center_align if col in [1,6,7,8,9,10,11] else left_align
+            if col == 6:
+                cell.font = Font(bold=True, color=status_colors.get(v.status, "000000"))
+        ws.row_dimensions[row].height = 18
+
+    ws.freeze_panes = "A5"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"VMF_Visitors_{from_date or 'All'}_{to_date or 'All'}.xlsx"
+    return StreamingResponse(
+        buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
 @router.get("/list", response_model=List[schemas.VisitorResponse])
 def list_visitors(
     flat_no   : Optional[str] = Query(None),
@@ -214,14 +335,10 @@ def list_visitors(
     db        : Session       = Depends(get_db),
 ):
     q = db.query(models.Visitor)
-    if flat_no:
-        q = q.filter(models.Visitor.flat_no == flat_no)
-    if status:
-        q = q.filter(models.Visitor.status == status)
-    if period:
-        q = _date_filter(q, models.Visitor, period)
-    if society_id:
-        q = q.filter(models.Visitor.society_id == society_id)
+    if flat_no:    q = q.filter(models.Visitor.flat_no    == flat_no)
+    if status:     q = q.filter(models.Visitor.status     == status)
+    if period:     q = _date_filter(q, models.Visitor, period)
+    if society_id: q = q.filter(models.Visitor.society_id == society_id)
     return q.order_by(
         models.Visitor.created_at.desc()).offset(skip).limit(limit).all()
 
@@ -233,10 +350,8 @@ def dashboard_metrics(
     db        : Session       = Depends(get_db),
 ):
     q = db.query(models.Visitor)
-    if flat_no:
-        q = q.filter(models.Visitor.flat_no == flat_no)
-    if society_id:
-        q = q.filter(models.Visitor.society_id == society_id)
+    if flat_no:    q = q.filter(models.Visitor.flat_no    == flat_no)
+    if society_id: q = q.filter(models.Visitor.society_id == society_id)
     q = _date_filter(q, models.Visitor, period)
     all_visitors = q.all()
     return {
