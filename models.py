@@ -9,14 +9,14 @@ def _now():
 class Society(Base):
     __tablename__ = "societies"
 
-    id           = Column(Integer, primary_key=True, index=True)
-    name         = Column(String,  nullable=False, unique=True)
-    address      = Column(String,  nullable=False)
-    is_active    = Column(Boolean, default=True)
-    created_at   = Column(DateTime(timezone=True), default=_now, nullable=False)
-    updated_at   = Column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
+    id         = Column(Integer, primary_key=True, index=True)
+    name       = Column(String,  nullable=False, unique=True)
+    address    = Column(String,  nullable=False)
+    is_active  = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), default=_now, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)
 
-    users        = relationship("User", back_populates="society")
+    users = relationship("User", back_populates="society")
 
 class User(Base):
     __tablename__ = "users"
@@ -24,6 +24,7 @@ class User(Base):
     id                   = Column(Integer, primary_key=True, index=True)
     name                 = Column(String,  nullable=False)
     phone                = Column(String,  unique=True, nullable=False, index=True)
+    email                = Column(String,  nullable=True, index=True)
     flat_no              = Column(String,  nullable=False)
     role                 = Column(String,  nullable=False)
     password             = Column(String,  nullable=True)
@@ -32,6 +33,8 @@ class User(Base):
     society_id           = Column(Integer, ForeignKey("societies.id"), nullable=True)
     fcm_token            = Column(String,  nullable=True)
     must_change_password = Column(Boolean, default=False)
+    reset_token          = Column(String,  nullable=True)
+    reset_token_expiry   = Column(DateTime(timezone=True), nullable=True)
     approved_by          = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at           = Column(DateTime(timezone=True), default=_now, nullable=False)
     updated_at           = Column(DateTime(timezone=True), default=_now, onupdate=_now, nullable=False)

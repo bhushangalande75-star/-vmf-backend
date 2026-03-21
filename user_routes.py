@@ -1,14 +1,39 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
+from datetime import datetime, timezone, timedelta
 import models, schemas
 from database import get_db
-import hashlib
+import hashlib, secrets, smtplib, os
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
 router = APIRouter(prefix="/user", tags=["Users"])
 
 def _hash(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
+
+def _send_email(to_email: str, subject: str, body: str):
+    """Send email via Gmail SMTP — free, no billing."""
+    smtp_email = os.getenv("SMTP_EMAIL", "")
+    smtp_pass  = os.getenv("SMTP_PASSWORD", "")
+    if not smtp_email or not smtp_pass:
+        print(f"[EMAIL] SMTP not configured. Code would be sent to {to_email}")
+        return
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"]    = smtp_email
+        msg["To"]      = to_email
+        msg.attach(MIMEText(body, "html"))
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+            server.login(smtp_email, smtp_pass)
+            server.sendmail(smtp_email, to_email, msg.as_string())
+        print(f"[EMAIL] Sent to {to_email}")
+    except Exception as e:
+        print(f"[EMAIL] Failed: {e}")
+
+# ── Register (all roles) ──────────────────────────────────────────────────────
 
 @router.post("/create", response_model=schemas.UserResponse, status_code=201)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
@@ -17,21 +42,29 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=409,
             detail=f"Phone {user.phone} already registered")
+
+    if not user.password:
+        raise HTTPException(status_code=400,
+            detail="Password is required for registration")
+
     user_status = "pending" if user.role == "member" else "active"
     new_user = models.User(
         name         = user.name,
         phone        = user.phone,
+        email        = user.email,
         flat_no      = user.flat_no,
         role         = user.role,
         status       = user_status,
         society_name = user.society_name,
         society_id   = user.society_id,
-        password     = _hash(user.password) if user.password else None,
+        password     = _hash(user.password),
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
     return new_user
+
+# ── Admin creates Guard or Admin account ──────────────────────────────────────
 
 @router.post("/create-guard", response_model=schemas.UserResponse, status_code=201)
 def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
@@ -43,6 +76,7 @@ def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
     guard = models.User(
         name                 = data.name,
         phone                = data.phone,
+        email                = data.email,
         flat_no              = data.flat_no,
         role                 = data.role,
         status               = "active",
@@ -56,22 +90,24 @@ def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
     db.refresh(guard)
     return guard
 
+# ── Login (ALL roles use phone + password now) ────────────────────────────────
+
 @router.post("/login", response_model=schemas.LoginResponse)
 def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(
         models.User.phone == user.phone).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
-    if db_user.role in ("admin", "security", "superadmin"):
-        if not user.password:
-            raise HTTPException(status_code=400, detail="Password required")
-        if db_user.password != _hash(user.password):
-            raise HTTPException(status_code=401, detail="Invalid password")
+
+    if db_user.password != _hash(user.password):
+        raise HTTPException(status_code=401, detail="Invalid password")
+
     if db_user.status == "pending":
         raise HTTPException(status_code=403,
             detail="Account pending approval by admin")
     if db_user.status == "inactive":
         raise HTTPException(status_code=403, detail="Account is inactive")
+
     return {
         "message"              : "Login successful",
         "user_id"              : db_user.id,
@@ -83,18 +119,74 @@ def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
         "must_change_password" : db_user.must_change_password or False,
     }
 
-@router.post("/approve")
-def approve_user(data: schemas.UserApprove, db: Session = Depends(get_db)):
+# ── Forgot Password — sends code to email ─────────────────────────────────────
+
+@router.post("/forgot-password")
+def forgot_password(data: schemas.ForgotPassword, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(
-        models.User.id == data.user_id).first()
+        models.User.email == data.email).first()
     if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user.status != "pending":
-        raise HTTPException(status_code=409,
-            detail="User is not pending approval")
-    user.status = "active" if data.action == "approved" else "inactive"
+        # Don't reveal if email exists or not (security)
+        return {"message": "If this email is registered, a reset code has been sent."}
+
+    # Generate 6-digit reset code
+    reset_code   = str(secrets.randbelow(900000) + 100000)
+    expiry       = datetime.now(timezone.utc) + timedelta(minutes=15)
+
+    user.reset_token        = _hash(reset_code)
+    user.reset_token_expiry = expiry
     db.commit()
-    return {"message": f"User {data.action} successfully"}
+
+    # Send email
+    body = f"""
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:32px;
+                background:#f9f9f9;border-radius:12px;">
+      <h2 style="color:#1A6B3A">VMF — Password Reset</h2>
+      <p>Hello <b>{user.name}</b>,</p>
+      <p>Your password reset code is:</p>
+      <div style="font-size:36px;font-weight:bold;letter-spacing:8px;
+                  color:#1A6B3A;padding:20px;background:#E8F5EC;
+                  border-radius:8px;text-align:center;margin:20px 0">
+        {reset_code}
+      </div>
+      <p>This code expires in <b>15 minutes</b>.</p>
+      <p>If you did not request this, please ignore this email.</p>
+      <hr style="border:none;border-top:1px solid #ddd;margin:24px 0"/>
+      <p style="color:#999;font-size:12px">VMF — Visitor Management Framework</p>
+    </div>
+    """
+    _send_email(data.email, "VMF — Password Reset Code", body)
+    return {"message": "If this email is registered, a reset code has been sent."}
+
+# ── Reset Password with code ───────────────────────────────────────────────────
+
+@router.post("/reset-password")
+def reset_password(data: schemas.ResetPassword, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(
+        models.User.email == data.email).first()
+    if not user or not user.reset_token or not user.reset_token_expiry:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset code")
+
+    # Check expiry
+    if datetime.now(timezone.utc) > user.reset_token_expiry:
+        raise HTTPException(status_code=400, detail="Reset code has expired")
+
+    # Verify code
+    if user.reset_token != _hash(data.reset_code):
+        raise HTTPException(status_code=400, detail="Invalid reset code")
+
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400,
+            detail="Password must be at least 6 characters")
+
+    user.password             = _hash(data.new_password)
+    user.reset_token          = None
+    user.reset_token_expiry   = None
+    user.must_change_password = False
+    db.commit()
+    return {"message": "Password reset successfully. Please login with your new password."}
+
+# ── Change password (guard first login) ───────────────────────────────────────
 
 @router.post("/change-password")
 def change_password(data: schemas.PasswordChange, db: Session = Depends(get_db)):
@@ -106,6 +198,39 @@ def change_password(data: schemas.PasswordChange, db: Session = Depends(get_db))
     user.must_change_password = False
     db.commit()
     return {"message": "Password changed successfully"}
+
+# ── Admin approves/rejects member ────────────────────────────────────────────
+
+@router.post("/approve")
+def approve_user(data: schemas.UserApprove, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(
+        models.User.id == data.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.status != "pending":
+        raise HTTPException(status_code=409, detail="User is not pending approval")
+    user.status = "active" if data.action == "approved" else "inactive"
+    db.commit()
+
+    # Send approval email if email exists
+    if user.email and data.action == "approved":
+        body = f"""
+        <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:32px;
+                    background:#f9f9f9;border-radius:12px;">
+          <h2 style="color:#1A6B3A">✅ Account Approved!</h2>
+          <p>Hello <b>{user.name}</b>,</p>
+          <p>Your VMF account has been approved by the admin.</p>
+          <p>You can now login using your phone number and password.</p>
+          <p><b>Phone (Username):</b> {user.phone}</p>
+          <hr style="border:none;border-top:1px solid #ddd;margin:24px 0"/>
+          <p style="color:#999;font-size:12px">VMF — Visitor Management Framework</p>
+        </div>
+        """
+        _send_email(user.email, "VMF — Account Approved!", body)
+
+    return {"message": f"User {data.action} successfully"}
+
+# ── Update FCM token ──────────────────────────────────────────────────────────
 
 @router.post("/update-token")
 def update_fcm_token(
@@ -121,6 +246,8 @@ def update_fcm_token(
     db.commit()
     return {"message": "Token updated"}
 
+# ── Pending list ──────────────────────────────────────────────────────────────
+
 @router.get("/pending/list")
 def pending_users(
     society_id: Optional[int] = None,
@@ -131,21 +258,22 @@ def pending_users(
         q = q.filter(models.User.society_id == society_id)
     return q.all()
 
+# ── List all users ────────────────────────────────────────────────────────────
+
 @router.get("/list/all")
 def list_users(
-    role       : Optional[str] = None,
-    society_id : Optional[int] = None,
+    role        : Optional[str] = None,
+    society_id  : Optional[int] = None,
     society_name: Optional[str] = None,
-    db         : Session = Depends(get_db)
+    db          : Session = Depends(get_db)
 ):
     q = db.query(models.User)
-    if role:
-        q = q.filter(models.User.role == role)
-    if society_id:
-        q = q.filter(models.User.society_id == society_id)
-    if society_name:
-        q = q.filter(models.User.society_name == society_name)
+    if role:         q = q.filter(models.User.role == role)
+    if society_id:   q = q.filter(models.User.society_id == society_id)
+    if society_name: q = q.filter(models.User.society_name == society_name)
     return q.all()
+
+# ── Delete user ───────────────────────────────────────────────────────────────
 
 @router.delete("/{user_id}")
 def delete_user(user_id: int, db: Session = Depends(get_db)):
@@ -156,6 +284,8 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     db.delete(user)
     db.commit()
     return {"message": "User deleted successfully"}
+
+# ── Get single user ───────────────────────────────────────────────────────────
 
 @router.get("/{user_id}", response_model=schemas.UserResponse)
 def get_user(user_id: int, db: Session = Depends(get_db)):

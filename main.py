@@ -4,19 +4,22 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 import models
 from database import engine
-from visitor_routes  import router as visitor_router
-from user_routes     import router as user_router
-from society_routes  import router as society_router
+from visitor_routes import router as visitor_router
+from user_routes    import router as user_router
+from society_routes import router as society_router
 
 def run_migrations():
     with engine.connect() as conn:
         migrations = [
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'active'",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS password VARCHAR",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS email VARCHAR",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS society_name VARCHAR",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS society_id INTEGER",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS fcm_token VARCHAR",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token VARCHAR",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP WITH TIME ZONE",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS approved_by INTEGER",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE",
             "ALTER TABLE visitors ADD COLUMN IF NOT EXISTS is_prescheduled BOOLEAN DEFAULT FALSE",
