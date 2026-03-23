@@ -1,21 +1,25 @@
-import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+import os
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "sqlite:///./vmf.db"  # fallback for local dev
-)
+DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-# Fix for Render PostgreSQL URL (postgres:// → postgresql://)
+# Fix postgres:// to postgresql:// for SQLAlchemy compatibility
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping = True,
+    pool_size     = 5,
+    max_overflow  = 10,
+    pool_recycle  = 300,
+    connect_args  = {"sslmode": "require"},
+)
 
-class Base(DeclarativeBase):
-    pass
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base         = declarative_base()
 
 def get_db():
     db = SessionLocal()
