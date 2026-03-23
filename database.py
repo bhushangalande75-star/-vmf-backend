@@ -5,7 +5,6 @@ import os
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
-# Fix postgres:// to postgresql:// for SQLAlchemy compatibility
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -15,7 +14,6 @@ engine = create_engine(
     pool_size     = 5,
     max_overflow  = 10,
     pool_recycle  = 300,
-    connect_args  = {"sslmode": "require"},
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
