@@ -14,7 +14,7 @@ def _hash(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 def _send_email(to_email: str, subject: str, body: str):
-    """Send email via Gmail SMTP — free, no billing."""
+    """Send email via Gmail SMTP port 587 — works on Render free tier."""
     smtp_email = os.getenv("SMTP_EMAIL", "")
     smtp_pass  = os.getenv("SMTP_PASSWORD", "")
     if not smtp_email or not smtp_pass:
@@ -26,13 +26,18 @@ def _send_email(to_email: str, subject: str, body: str):
         msg["From"]    = smtp_email
         msg["To"]      = to_email
         msg.attach(MIMEText(body, "html"))
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+
+        # Use port 587 with STARTTLS instead of 465 SSL
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
             server.login(smtp_email, smtp_pass)
             server.sendmail(smtp_email, to_email, msg.as_string())
         print(f"[EMAIL] Sent to {to_email}")
     except Exception as e:
         print(f"[EMAIL] Failed: {e}")
-
+        
 # ── Register (all roles) ──────────────────────────────────────────────────────
 
 @router.post("/create", response_model=schemas.UserResponse, status_code=201)
