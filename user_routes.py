@@ -14,30 +14,33 @@ def _hash(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 def _send_email(to_email: str, subject: str, body: str):
-    """Send email via Gmail SMTP port 587 — works on Render free tier."""
-    smtp_email = os.getenv("SMTP_EMAIL", "")
-    smtp_pass  = os.getenv("SMTP_PASSWORD", "")
-    if not smtp_email or not smtp_pass:
-        print(f"[EMAIL] SMTP not configured. Code would be sent to {to_email}")
+    api_key    = os.getenv("BREVO_API_KEY", "")
+    smtp_email = os.getenv("SMTP_EMAIL", "societyvmf@gmail.com")
+    if not api_key:
+        print(f"[EMAIL] Brevo not configured.")
         return
     try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"]    = smtp_email
-        msg["To"]      = to_email
-        msg.attach(MIMEText(body, "html"))
-
-        # Use port 587 with STARTTLS instead of 465 SSL
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(smtp_email, smtp_pass)
-            server.sendmail(smtp_email, to_email, msg.as_string())
-        print(f"[EMAIL] Sent to {to_email}")
+        response = httpx.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key"     : api_key,
+                "Content-Type": "application/json",
+            },
+            json={
+                "sender"     : {"name": "VMF Society", "email": smtp_email},
+                "to"         : [{"email": to_email}],
+                "subject"    : subject,
+                "htmlContent": body,
+            },
+            timeout=10,
+        )
+        if response.status_code == 201:
+            print(f"[EMAIL] Sent to {to_email}")
+        else:
+            print(f"[EMAIL] Brevo error: {response.status_code} - {response.text}")
     except Exception as e:
         print(f"[EMAIL] Failed: {e}")
-        
+
 # ── Register (all roles) ──────────────────────────────────────────────────────
 
 @router.post("/create", response_model=schemas.UserResponse, status_code=201)
