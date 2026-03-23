@@ -4,9 +4,9 @@ from typing import Optional
 from datetime import datetime, timezone, timedelta
 import models, schemas
 from database import get_db
-import hashlib, secrets, smtplib, os
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import hashlib, secrets, os
+import httpx
+
 
 router = APIRouter(prefix="/user", tags=["Users"])
 
