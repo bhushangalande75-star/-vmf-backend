@@ -293,6 +293,67 @@ def delete_user(user_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "User deleted successfully"}
 
+# ── Update profile ────────────────────────────────────────────────────────────
+
+@router.post("/update-profile")
+def update_profile(
+    user_id     : int            = Query(...),
+    name        : Optional[str]  = Query(None),
+    email       : Optional[str]  = Query(None),
+    phone       : Optional[str]  = Query(None),
+    db          : Session        = Depends(get_db),
+):
+    user = db.query(models.User).filter(
+        models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if name  is not None: user.name  = name
+    if email is not None: user.email = email
+    if phone is not None:
+        # Check phone not taken by another user
+        existing = db.query(models.User).filter(
+            models.User.phone == phone,
+            models.User.id    != user_id).first()
+        if existing:
+            raise HTTPException(status_code=409,
+                detail="Phone number already registered to another account")
+        user.phone = phone
+
+    db.commit()
+    db.refresh(user)
+    return {"message": "Profile updated successfully",
+            "user"   : {
+                "id"    : user.id,
+                "name"  : user.name,
+                "email" : user.email,
+                "phone" : user.phone,
+            }}
+
+# ── Update password from profile ──────────────────────────────────────────────
+
+@router.post("/update-password")
+def update_password(
+    user_id     : int = Query(...),
+    old_password: str = Query(...),
+    new_password: str = Query(...),
+    db          : Session = Depends(get_db),
+):
+    user = db.query(models.User).filter(
+        models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.password != _hash(old_password):
+        raise HTTPException(status_code=401,
+            detail="Current password is incorrect")
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400,
+            detail="New password must be at least 6 characters")
+    user.password             = _hash(new_password)
+    user.must_change_password = False
+    db.commit()
+    return {"message": "Password updated successfully"}
+    
 # ── Get single user ───────────────────────────────────────────────────────────
 
 @router.get("/{user_id}", response_model=schemas.UserResponse)
