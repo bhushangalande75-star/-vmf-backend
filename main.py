@@ -1,12 +1,25 @@
+# backend/main.py
+# ── Fix 1: Superadmin is now a real DB user, seeded on startup ──────────────
+# Remove ALL hardcoded credential checks from the Flutter login screen.
+# The superadmin logs in via POST /user/login just like any other user.
+#
+# IMPORTANT: Set SUPERADMIN_PASSWORD in your environment variables on Render.
+# If not set, defaults to a random value printed once at startup (change it!).
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
-import models
-from database import engine
+import models, secrets, hashlib, os
+from database import engine, SessionLocal
 from visitor_routes import router as visitor_router
 from user_routes    import router as user_router
 from society_routes import router as society_router
+
+
+def _hash(password: str) -> str:
+    return hashlib.sha256(password.encode()).hexdigest()
+
 
 def run_migrations():
     with engine.connect() as conn:
@@ -37,15 +50,64 @@ def run_migrations():
                 print(f"Migration skipped: {e}")
         conn.commit()
 
+
+def seed_superadmin():
+    """
+    Creates the superadmin user on first startup if it doesn't exist.
+    Password comes from SUPERADMIN_PASSWORD env var.
+    Phone (username) comes from SUPERADMIN_PHONE env var.
+    Both default to safe random values printed once — change them immediately.
+    """
+    db = SessionLocal()
+    try:
+        # Read from environment (set these on Render → Environment tab)
+        sa_phone    = os.getenv("SUPERADMIN_PHONE",    "0000000000")
+        sa_password = os.getenv("SUPERADMIN_PASSWORD", "")
+
+        if not sa_password:
+            # Generate a one-time random password and print it clearly
+            sa_password = secrets.token_urlsafe(12)
+            print("=" * 60)
+            print("  SUPERADMIN_PASSWORD env var not set!")
+            print(f"  One-time password: {sa_password}")
+            print(f"  Phone: {sa_phone}")
+            print("  Set SUPERADMIN_PASSWORD in Render → Environment")
+            print("=" * 60)
+
+        existing = db.query(models.User).filter(
+            models.User.phone == sa_phone,
+            models.User.role  == "superadmin",
+        ).first()
+
+        if not existing:
+            superadmin = models.User(
+                name       = "Super Admin",
+                phone      = sa_phone,
+                flat_no    = "N/A",
+                role       = "superadmin",
+                status     = "active",
+                password   = _hash(sa_password),
+            )
+            db.add(superadmin)
+            db.commit()
+            print(f"[SEED] Superadmin created. Phone: {sa_phone}")
+        else:
+            print(f"[SEED] Superadmin already exists (phone: {sa_phone})")
+    finally:
+        db.close()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     models.Base.metadata.create_all(bind=engine)
     run_migrations()
+    seed_superadmin()   # ← seeds superadmin on every startup (idempotent)
     yield
+
 
 app = FastAPI(
     title    = "Visitor Management System",
-    version  = "3.0.0",
+    version  = "3.1.0",
     lifespan = lifespan,
 )
 
@@ -63,4 +125,4 @@ app.include_router(user_router)
 
 @app.get("/", tags=["Health"])
 def home():
-    return {"message": "VMF Backend Running", "version": "3.0.0"}
+    return {"message": "VMF Backend Running", "version": "3.1.0"}
