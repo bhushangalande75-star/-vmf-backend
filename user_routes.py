@@ -91,7 +91,7 @@ def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
         society_name         = data.society_name,
         society_id           = data.society_id,
         password             = _hash(data.password),
-        must_change_password = True if data.role == "security" else False,
+        must_change_password = False,
     )
     db.add(guard)
     db.commit()
@@ -353,7 +353,7 @@ def update_password(
     user.must_change_password = False
     db.commit()
     return {"message": "Password updated successfully"}
-    
+
 # ── Get single user ───────────────────────────────────────────────────────────
 
 @router.get("/{user_id}", response_model=schemas.UserResponse)
