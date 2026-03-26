@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
-import models, secrets, hashlib, os
+import models, secrets, hashlib, os, traceback
 from database import engine, SessionLocal
 from visitor_routes import router as visitor_router
 from user_routes    import router as user_router
@@ -96,6 +97,26 @@ app = FastAPI(
     version  = "3.1.0",
     lifespan = lifespan,
 )
+
+# ── Global exception handlers — always return JSON, never HTML ────────────────
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    # Build a readable message from Pydantic validation errors
+    messages = []
+    for e in errors:
+        field = " → ".join(str(loc) for loc in e["loc"] if loc != "body")
+        messages.append(f"{field}: {e['msg']}" if field else e["msg"])
+    detail = "; ".join(messages) if messages else "Invalid request data"
+    return JSONResponse(status_code=422, content={"detail": detail})
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    print(f"[ERROR] Unhandled exception on {request.url}: {traceback.format_exc()}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal Server Error: {type(exc).__name__}: {str(exc)}"},
+    )
 
 app.add_middleware(
     CORSMiddleware,

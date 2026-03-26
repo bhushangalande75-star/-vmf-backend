@@ -93,7 +93,7 @@ def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
         society_name         = data.society_name,
         society_id           = data.society_id,
         password             = _hash(data.password),
-        must_change_password = False,   # ← Guard not required to change password
+        must_change_password = True,    # ← Guard must change password on first login
     )
     db.add(guard)
     db.commit()
