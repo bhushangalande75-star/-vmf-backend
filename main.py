@@ -1,14 +1,8 @@
-# backend/main.py
-# ── Fix 1: Superadmin is now a real DB user, seeded on startup ──────────────
-# Remove ALL hardcoded credential checks from the Flutter login screen.
-# The superadmin logs in via POST /user/login just like any other user.
-#
-# IMPORTANT: Set SUPERADMIN_PASSWORD in your environment variables on Render.
-# If not set, defaults to a random value printed once at startup (change it!).
-
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy import text
 import models, secrets, hashlib, os
 from database import engine, SessionLocal
@@ -52,20 +46,12 @@ def run_migrations():
 
 
 def seed_superadmin():
-    """
-    Creates the superadmin user on first startup if it doesn't exist.
-    Password comes from SUPERADMIN_PASSWORD env var.
-    Phone (username) comes from SUPERADMIN_PHONE env var.
-    Both default to safe random values printed once — change them immediately.
-    """
     db = SessionLocal()
     try:
-        # Read from environment (set these on Render → Environment tab)
         sa_phone    = os.getenv("SUPERADMIN_PHONE",    "0000000000")
         sa_password = os.getenv("SUPERADMIN_PASSWORD", "")
 
         if not sa_password:
-            # Generate a one-time random password and print it clearly
             sa_password = secrets.token_urlsafe(12)
             print("=" * 60)
             print("  SUPERADMIN_PASSWORD env var not set!")
@@ -81,12 +67,12 @@ def seed_superadmin():
 
         if not existing:
             superadmin = models.User(
-                name       = "Super Admin",
-                phone      = sa_phone,
-                flat_no    = "N/A",
-                role       = "superadmin",
-                status     = "active",
-                password   = _hash(sa_password),
+                name     = "Super Admin",
+                phone    = sa_phone,
+                flat_no  = "N/A",
+                role     = "superadmin",
+                status   = "active",
+                password = _hash(sa_password),
             )
             db.add(superadmin)
             db.commit()
@@ -101,7 +87,7 @@ def seed_superadmin():
 async def lifespan(app: FastAPI):
     models.Base.metadata.create_all(bind=engine)
     run_migrations()
-    seed_superadmin()   # ← seeds superadmin on every startup (idempotent)
+    seed_superadmin()
     yield
 
 
@@ -122,6 +108,13 @@ app.add_middleware(
 app.include_router(society_router)
 app.include_router(visitor_router)
 app.include_router(user_router)
+
+# ── Serve Super Admin Portal ──────────────────────────────────────────────────
+# Place index.html in backend/static/ folder
+# Access at: https://vmf-backend.onrender.com/admin
+@app.get("/admin", include_in_schema=False)
+def admin_portal():
+    return FileResponse("static/index.html")
 
 @app.get("/", tags=["Health"])
 def home():
