@@ -62,6 +62,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
         email        = user.email,
         flat_no      = user.flat_no,
         role         = user.role,
+        member_type  = user.member_type or "",
         status       = user_status,
         society_name = user.society_name,
         society_id   = user.society_id,
@@ -87,18 +88,20 @@ def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
         email                = data.email,
         flat_no              = data.flat_no,
         role                 = data.role,
+        member_type          = "",
         status               = "active",
         society_name         = data.society_name,
         society_id           = data.society_id,
         password             = _hash(data.password),
-        must_change_password = False,
+        must_change_password = True if data.role == "security" else False,
     )
     db.add(guard)
     db.commit()
     db.refresh(guard)
     return guard
 
-# ── Login (ALL roles use phone + password now) ────────────────────────────────
+# ── Login ─────────────────────────────────────────────────────────────────────
+# "Login As" dropdown removed from app — role is determined purely by backend.
 
 @router.post("/login", response_model=schemas.LoginResponse)
 def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
@@ -127,25 +130,22 @@ def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
         "must_change_password" : db_user.must_change_password or False,
     }
 
-# ── Forgot Password — sends code to email ─────────────────────────────────────
+# ── Forgot Password ───────────────────────────────────────────────────────────
 
 @router.post("/forgot-password")
 def forgot_password(data: schemas.ForgotPassword, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(
         models.User.email == data.email).first()
     if not user:
-        # Don't reveal if email exists or not (security)
         return {"message": "If this email is registered, a reset code has been sent."}
 
-    # Generate 6-digit reset code
-    reset_code   = str(secrets.randbelow(900000) + 100000)
-    expiry       = datetime.now(timezone.utc) + timedelta(minutes=15)
+    reset_code = str(secrets.randbelow(900000) + 100000)
+    expiry     = datetime.now(timezone.utc) + timedelta(minutes=15)
 
     user.reset_token        = _hash(reset_code)
     user.reset_token_expiry = expiry
     db.commit()
 
-    # Send email
     body = f"""
     <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:32px;
                 background:#f9f9f9;border-radius:12px;">
@@ -166,7 +166,7 @@ def forgot_password(data: schemas.ForgotPassword, db: Session = Depends(get_db))
     _send_email(data.email, "VMF — Password Reset Code", body)
     return {"message": "If this email is registered, a reset code has been sent."}
 
-# ── Reset Password with code ───────────────────────────────────────────────────
+# ── Reset Password ────────────────────────────────────────────────────────────
 
 @router.post("/reset-password")
 def reset_password(data: schemas.ResetPassword, db: Session = Depends(get_db)):
@@ -175,11 +175,9 @@ def reset_password(data: schemas.ResetPassword, db: Session = Depends(get_db)):
     if not user or not user.reset_token or not user.reset_token_expiry:
         raise HTTPException(status_code=400, detail="Invalid or expired reset code")
 
-    # Check expiry
     if datetime.now(timezone.utc) > user.reset_token_expiry:
         raise HTTPException(status_code=400, detail="Reset code has expired")
 
-    # Verify code
     if user.reset_token != _hash(data.reset_code):
         raise HTTPException(status_code=400, detail="Invalid reset code")
 
@@ -194,7 +192,7 @@ def reset_password(data: schemas.ResetPassword, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Password reset successfully. Please login with your new password."}
 
-# ── Change password (guard first login) ───────────────────────────────────────
+# ── Change password (guard/admin first login) ─────────────────────────────────
 
 @router.post("/change-password")
 def change_password(data: schemas.PasswordChange, db: Session = Depends(get_db)):
@@ -207,7 +205,7 @@ def change_password(data: schemas.PasswordChange, db: Session = Depends(get_db))
     db.commit()
     return {"message": "Password changed successfully"}
 
-# ── Admin approves/rejects member ────────────────────────────────────────────
+# ── Approve / reject member ───────────────────────────────────────────────────
 
 @router.post("/approve")
 def approve_user(data: schemas.UserApprove, db: Session = Depends(get_db)):
@@ -220,7 +218,6 @@ def approve_user(data: schemas.UserApprove, db: Session = Depends(get_db)):
     user.status = "active" if data.action == "approved" else "inactive"
     db.commit()
 
-    # Send approval email if email exists
     if user.email and data.action == "approved":
         body = f"""
         <div style="font-family:Arial,sans-serif;max-width:480px;margin:auto;padding:32px;
@@ -281,27 +278,49 @@ def list_users(
     if society_name: q = q.filter(models.User.society_name == society_name)
     return q.all()
 
-# ── Delete user ───────────────────────────────────────────────────────────────
+# ── Update role (promote member → admin or demote admin → member) ─────────────
 
-@router.delete("/{user_id}")
-def delete_user(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(
-        models.User.id == user_id).first()
+@router.post("/update-role")
+def update_role(
+    user_id: int = Query(..., description="ID of user to update"),
+    role   : str = Query(..., description="New role: 'member' or 'admin'"),
+    db     : Session = Depends(get_db),
+):
+    allowed = {"member", "admin"}
+    if role not in allowed:
+        raise HTTPException(status_code=400,
+            detail=f"Role must be one of: {', '.join(allowed)}")
+
+    user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    db.delete(user)
-    db.commit()
-    return {"message": "User deleted successfully"}
 
-# ── Update profile ────────────────────────────────────────────────────────────
+    # Safety: prevent demoting the last active admin in a society
+    if role == "member" and user.role == "admin" and user.society_id:
+        admin_count = db.query(models.User).filter(
+            models.User.society_id == user.society_id,
+            models.User.role       == "admin",
+            models.User.status     == "active",
+        ).count()
+        if admin_count <= 1:
+            raise HTTPException(status_code=400,
+                detail="Cannot demote the only admin of this society.")
+
+    user.role = role
+    db.commit()
+    db.refresh(user)
+    return {"message": f"Role updated to '{role}'", "user_id": user_id}
+
+# ── Update member type (owner / tenant) ───────────────────────────────────────
 
 @router.post("/update-profile")
 def update_profile(
-    user_id     : int            = Query(...),
-    name        : Optional[str]  = Query(None),
-    email       : Optional[str]  = Query(None),
-    phone       : Optional[str]  = Query(None),
-    db          : Session        = Depends(get_db),
+    user_id    : int           = Query(...),
+    name       : Optional[str] = Query(None),
+    email      : Optional[str] = Query(None),
+    phone      : Optional[str] = Query(None),
+    member_type: Optional[str] = Query(None),
+    db         : Session       = Depends(get_db),
 ):
     user = db.query(models.User).filter(
         models.User.id == user_id).first()
@@ -311,7 +330,6 @@ def update_profile(
     if name  is not None: user.name  = name
     if email is not None: user.email = email
     if phone is not None:
-        # Check phone not taken by another user
         existing = db.query(models.User).filter(
             models.User.phone == phone,
             models.User.id    != user_id).first()
@@ -319,18 +337,24 @@ def update_profile(
             raise HTTPException(status_code=409,
                 detail="Phone number already registered to another account")
         user.phone = phone
+    if member_type is not None:
+        if member_type not in ("owner", "tenant", ""):
+            raise HTTPException(status_code=400,
+                detail="member_type must be 'owner', 'tenant', or ''")
+        user.member_type = member_type
 
     db.commit()
     db.refresh(user)
     return {"message": "Profile updated successfully",
             "user"   : {
-                "id"    : user.id,
-                "name"  : user.name,
-                "email" : user.email,
-                "phone" : user.phone,
+                "id"         : user.id,
+                "name"       : user.name,
+                "email"      : user.email,
+                "phone"      : user.phone,
+                "member_type": user.member_type,
             }}
 
-# ── Update password from profile ──────────────────────────────────────────────
+# ── Update password from profile screen ──────────────────────────────────────
 
 @router.post("/update-password")
 def update_password(
@@ -353,6 +377,18 @@ def update_password(
     user.must_change_password = False
     db.commit()
     return {"message": "Password updated successfully"}
+
+# ── Delete user ───────────────────────────────────────────────────────────────
+
+@router.delete("/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(
+        models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    db.delete(user)
+    db.commit()
+    return {"message": "User deleted successfully"}
 
 # ── Get single user ───────────────────────────────────────────────────────────
 
