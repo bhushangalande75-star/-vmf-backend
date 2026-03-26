@@ -88,12 +88,11 @@ def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
         email                = data.email,
         flat_no              = data.flat_no,
         role                 = data.role,
-        member_type          = "",
         status               = "active",
         society_name         = data.society_name,
         society_id           = data.society_id,
         password             = _hash(data.password),
-        must_change_password = True,    # ← Guard must change password on first login
+        must_change_password = False,  # Admin-created guard does NOT need to change password
     )
     db.add(guard)
     db.commit()

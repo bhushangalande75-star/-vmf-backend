@@ -33,6 +33,7 @@ class UserCreate(BaseModel):
     password     : Optional[str] = None
     society_name : Optional[str] = None
     society_id   : Optional[int] = None
+    member_type  : Optional[str] = None
 
     @field_validator("phone")
     @classmethod
@@ -90,6 +91,7 @@ class UserResponse(BaseModel):
     flat_no      : str
     role         : str
     status       : str
+    member_type  : Optional[str] = None
     society_name : Optional[str]
     society_id   : Optional[int]
     created_at   : datetime

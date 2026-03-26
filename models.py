@@ -31,6 +31,7 @@ class User(Base):
     status               = Column(String,  nullable=False, default="active")
     society_name         = Column(String,  nullable=True)
     society_id           = Column(Integer, ForeignKey("societies.id"), nullable=True)
+    member_type          = Column(String,  nullable=True, default="")
     fcm_token            = Column(String,  nullable=True)
     must_change_password = Column(Boolean, default=False)
     reset_token          = Column(String,  nullable=True)
