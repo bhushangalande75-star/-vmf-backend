@@ -88,7 +88,6 @@ def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
         email                = data.email,
         flat_no              = data.flat_no,
         role                 = data.role,
-        member_type          = "",
         status               = "active",
         society_name         = data.society_name,
         society_id           = data.society_id,
