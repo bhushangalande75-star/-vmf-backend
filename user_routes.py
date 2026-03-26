@@ -88,11 +88,12 @@ def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
         email                = data.email,
         flat_no              = data.flat_no,
         role                 = data.role,
+        member_type          = "",
         status               = "active",
         society_name         = data.society_name,
         society_id           = data.society_id,
         password             = _hash(data.password),
-        must_change_password = True if data.role == "security" else False,
+        must_change_password = False,   # ← Guard not required to change password
     )
     db.add(guard)
     db.commit()
@@ -100,7 +101,6 @@ def create_guard(data: schemas.GuardCreate, db: Session = Depends(get_db)):
     return guard
 
 # ── Login ─────────────────────────────────────────────────────────────────────
-# "Login As" dropdown removed from app — role is determined purely by backend.
 
 @router.post("/login", response_model=schemas.LoginResponse)
 def login(user: schemas.UserLogin, db: Session = Depends(get_db)):
@@ -191,7 +191,7 @@ def reset_password(data: schemas.ResetPassword, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Password reset successfully. Please login with your new password."}
 
-# ── Change password (guard/admin first login) ─────────────────────────────────
+# ── Change password ───────────────────────────────────────────────────────────
 
 @router.post("/change-password")
 def change_password(data: schemas.PasswordChange, db: Session = Depends(get_db)):
@@ -277,12 +277,12 @@ def list_users(
     if society_name: q = q.filter(models.User.society_name == society_name)
     return q.all()
 
-# ── Update role (promote member → admin or demote admin → member) ─────────────
+# ── Update role ───────────────────────────────────────────────────────────────
 
 @router.post("/update-role")
 def update_role(
-    user_id: int = Query(..., description="ID of user to update"),
-    role   : str = Query(..., description="New role: 'member' or 'admin'"),
+    user_id: int = Query(...),
+    role   : str = Query(...),
     db     : Session = Depends(get_db),
 ):
     allowed = {"member", "admin"}
@@ -294,7 +294,6 @@ def update_role(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    # Safety: prevent demoting the last active admin in a society
     if role == "member" and user.role == "admin" and user.society_id:
         admin_count = db.query(models.User).filter(
             models.User.society_id == user.society_id,
@@ -310,7 +309,7 @@ def update_role(
     db.refresh(user)
     return {"message": f"Role updated to '{role}'", "user_id": user_id}
 
-# ── Update member type (owner / tenant) ───────────────────────────────────────
+# ── Update profile ────────────────────────────────────────────────────────────
 
 @router.post("/update-profile")
 def update_profile(
@@ -353,7 +352,7 @@ def update_profile(
                 "member_type": user.member_type,
             }}
 
-# ── Update password from profile screen ──────────────────────────────────────
+# ── Update password from profile ──────────────────────────────────────────────
 
 @router.post("/update-password")
 def update_password(
