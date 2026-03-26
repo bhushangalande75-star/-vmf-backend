@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VMF — Super Admin Portal</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0f0d; --surface: #111a15; --surface2: #162019; --border: #1e3025;
+      --accent: #2ecc71; --accent2: #27ae60; --accent-dim: rgba(46,204,113,0.12);
+      --text: #e8f5ec; --text2: #8aab92; --text3: #4a6b52;
+      --red: #e74c3c; --orange: #f39c12; --blue: #3498db; --purple: #9b59b6;
+      --radius: 12px; --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+
+    #loginPage { min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at 30% 50%, rgba(46,204,113,0.08) 0%, transparent 60%), var(--bg); }
+    .login-wrap { width: 420px; padding: 48px; background: var(--surface); border: 1px solid var(--border); border-radius: 20px; box-shadow: var(--shadow); }
+    .login-logo { display: flex; align-items: center; gap: 12px; margin-bottom: 36px; }
+    .login-logo .logo-mark { width: 44px; height: 44px; background: var(--accent); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+    .login-logo h1 { font-family: 'DM Serif Display', serif; font-size: 22px; }
+    .login-logo span { color: var(--text2); font-size: 13px; display: block; }
+    .login-label { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text2); margin-bottom: 8px; }
+    .login-input { width: 100%; padding: 13px 16px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; outline: none; transition: border-color 0.2s; margin-bottom: 20px; }
+    .login-input:focus { border-color: var(--accent); }
+    .login-btn { width: 100%; padding: 14px; background: var(--accent); border: none; border-radius: var(--radius); color: #0a0f0d; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; }
+    .login-btn:hover { background: var(--accent2); }
+    .login-error { margin-top: 14px; padding: 12px; background: rgba(231,76,60,0.1); border: 1px solid rgba(231,76,60,0.3); border-radius: 8px; color: #e74c3c; font-size: 13px; display: none; }
+
+    #app { display: none; min-height: 100vh; }
+    .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 240px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; z-index: 100; overflow-y: auto; }
+    .sidebar-logo { padding: 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+    .sidebar-logo .mark { width: 36px; height: 36px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+    .sidebar-logo h2 { font-family: 'DM Serif Display', serif; font-size: 17px; line-height: 1.2; }
+    .sidebar-logo span { color: var(--text2); font-size: 11px; }
+    .nav-section { padding: 16px 12px 8px; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); font-weight: 600; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin: 2px 8px; border-radius: 8px; cursor: pointer; font-size: 13.5px; color: var(--text2); transition: background 0.15s, color 0.15s; }
+    .nav-item:hover { background: var(--accent-dim); color: var(--text); }
+    .nav-item.active { background: var(--accent-dim); color: var(--accent); font-weight: 500; }
+    .nav-item .icon { font-size: 16px; width: 20px; text-align: center; }
+    .sidebar-footer { margin-top: auto; padding: 16px; border-top: 1px solid var(--border); flex-shrink: 0; }
+    .logout-btn { width: 100%; padding: 10px; background: rgba(231,76,60,0.1); border: 1px solid rgba(231,76,60,0.2); border-radius: 8px; color: var(--red); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; }
+    .logout-btn:hover { background: rgba(231,76,60,0.2); }
+    .main { margin-left: 240px; min-height: 100vh; padding: 32px; }
+    .page { display: none; }
+    .page.active { display: block; }
+    .page-title { font-family: 'DM Serif Display', serif; font-size: 28px; margin-bottom: 4px; }
+    .page-sub { color: var(--text2); font-size: 14px; margin-bottom: 28px; }
+
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(155px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; position: relative; overflow: hidden; }
+    .stat-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; }
+    .stat-card.green::before { background: var(--accent); }
+    .stat-card.blue::before  { background: var(--blue); }
+    .stat-card.orange::before{ background: var(--orange); }
+    .stat-card.purple::before{ background: var(--purple); }
+    .stat-card.red::before   { background: var(--red); }
+    .stat-icon { font-size: 22px; margin-bottom: 10px; }
+    .stat-value { font-size: 30px; font-weight: 600; font-family: 'DM Serif Display', serif; line-height: 1; margin-bottom: 4px; }
+    .stat-label { color: var(--text2); font-size: 12px; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th { text-align: left; padding: 12px 16px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text3); border-bottom: 1px solid var(--border); font-weight: 600; }
+    td { padding: 13px 16px; font-size: 13.5px; border-bottom: 1px solid rgba(30,48,37,0.5); color: var(--text); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(46,204,113,0.03); }
+
+    .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge.active   { background: rgba(46,204,113,0.15); color: var(--accent); }
+    .badge.pending  { background: rgba(243,156,18,0.15);  color: var(--orange); }
+    .badge.inactive { background: rgba(231,76,60,0.15);   color: var(--red); }
+    .badge.admin    { background: rgba(52,152,219,0.15);  color: var(--blue); }
+    .badge.security { background: rgba(155,89,182,0.15);  color: var(--purple); }
+    .badge.member   { background: rgba(46,204,113,0.15);  color: var(--accent); }
+
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .form-group { display: flex; flex-direction: column; gap: 8px; }
+    .form-group.full { grid-column: 1/-1; }
+    .form-label { font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text2); }
+    .form-input, .form-select { padding: 12px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px; outline: none; transition: border-color 0.2s; }
+    .form-input:focus, .form-select:focus { border-color: var(--accent); }
+    .form-select option { background: var(--surface2); }
+
+    .btn { padding: 11px 20px; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13.5px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
+    .btn-primary { background: var(--accent); color: #0a0f0d; }
+    .btn-primary:hover { background: var(--accent2); }
+    .btn-danger  { background: rgba(231,76,60,0.15); color: var(--red); border: 1px solid rgba(231,76,60,0.2); }
+    .btn-danger:hover  { background: rgba(231,76,60,0.25); }
+    .btn-warning { background: rgba(243,156,18,0.15); color: var(--orange); border: 1px solid rgba(243,156,18,0.2); }
+    .btn-warning:hover { background: rgba(243,156,18,0.25); }
+    .btn-ghost   { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-blue    { background: rgba(52,152,219,0.15); color: var(--blue); border: 1px solid rgba(52,152,219,0.2); }
+    .btn-blue:hover { background: rgba(52,152,219,0.25); }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+    .alert { padding: 12px 16px; border-radius: 8px; font-size: 13px; margin-top: 16px; display: none; white-space: pre-line; }
+    .alert.success { background: rgba(46,204,113,0.1); border: 1px solid rgba(46,204,113,0.3); color: var(--accent); }
+    .alert.error   { background: rgba(231,76,60,0.1);  border: 1px solid rgba(231,76,60,0.3);  color: var(--red); }
+
+    .filter-bar { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+    .filter-chip { padding: 7px 16px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--surface2); color: var(--text2); transition: all 0.15s; }
+    .filter-chip.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+    .header-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+
+    .society-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+    .society-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; transition: border-color 0.2s; }
+    .society-card:hover { border-color: var(--accent); }
+    .society-name { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .society-id { font-size: 11px; color: var(--text3); font-family: monospace; margin-bottom: 6px; }
+    .society-addr { color: var(--text2); font-size: 12px; margin-bottom: 14px; }
+    .society-stats { display: flex; gap: 16px; margin-bottom: 14px; }
+    .society-stat { text-align: center; }
+    .society-stat-val { font-size: 20px; font-weight: 600; color: var(--accent); }
+    .society-stat-lbl { font-size: 10px; color: var(--text2); }
+    .society-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); z-index: 200; display: none; align-items: center; justify-content: center; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 32px; width: 500px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: var(--shadow); }
+    .modal-title { font-family: 'DM Serif Display', serif; font-size: 20px; margin-bottom: 8px; }
+    .modal-sub { color: var(--text2); font-size: 13px; margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 24px; justify-content: flex-end; }
+
+    .search-wrap { position: relative; }
+    .search-icon { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text3); font-size: 14px; pointer-events: none; }
+
+    .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--text2); }
+    .empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+
+    .tab-strip { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--border); }
+    .tab { padding: 10px 18px; font-size: 13px; font-weight: 500; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.15s; }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .export-bar { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--surface); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginPage">
+  <div class="login-wrap">
+    <div class="login-logo">
+      <div class="logo-mark">🏢</div>
+      <div><h1>VMF Portal</h1><span>Super Admin Access</span></div>
+    </div>
+    <div class="login-label">Username</div>
+    <input class="login-input" type="text" id="loginUser" placeholder="superadmin" onkeydown="if(event.key==='Enter')doLogin()">
+    <div class="login-label">Password</div>
+    <input class="login-input" type="password" id="loginPass" placeholder="Enter password" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="login-btn" onclick="doLogin()">Sign In</button>
+    <div class="login-error" id="loginError">Invalid credentials. Please try again.</div>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="app">
+  <div class="sidebar">
+    <div class="sidebar-logo">
+      <div class="mark">🏢</div>
+      <div><h2>VMF</h2><span>Super Admin</span></div>
+    </div>
+    <div class="nav-section">Overview</div>
+    <div class="nav-item active" onclick="showPage('dashboard')"><span class="icon">📊</span>Dashboard</div>
+    <div class="nav-section">Societies</div>
+    <div class="nav-item" onclick="showPage('societies')"><span class="icon">🏘️</span>All Societies</div>
+    <div class="nav-item" onclick="showPage('createSociety')"><span class="icon">➕</span>Onboard Society</div>
+    <div class="nav-section">Users</div>
+    <div class="nav-item" onclick="showPage('users')"><span class="icon">👥</span>All Users</div>
+    <div class="nav-item" onclick="showPage('createAdmin')"><span class="icon">👤</span>Create Admin</div>
+    <div class="nav-item" onclick="showPage('createGuard')"><span class="icon">🛡️</span>Create Guard</div>
+    <div class="nav-item" onclick="showPage('pending')"><span class="icon">⏳</span>Pending Approvals</div>
+    <div class="nav-section">Reports</div>
+    <div class="nav-item" onclick="showPage('reports')"><span class="icon">📑</span>Reports</div>
+    <div class="sidebar-footer">
+      <button class="logout-btn" onclick="doLogout()">← Sign Out</button>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="page-title">Dashboard</div>
+      <div class="page-sub">Global overview of all societies</div>
+      <div class="filter-bar">
+        <span style="color:var(--text2);font-size:13px">Period:</span>
+        <div class="filter-chip active" onclick="setDashPeriod('day',this)">Today</div>
+        <div class="filter-chip" onclick="setDashPeriod('week',this)">Week</div>
+        <div class="filter-chip" onclick="setDashPeriod('month',this)">Month</div>
+        <div class="filter-chip" onclick="setDashPeriod('year',this)">Year</div>
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="loadDashboard()">↺ Refresh</button>
+      </div>
+      <div class="stats-grid">
+        <div class="stat-card green"><div class="stat-icon">🏘️</div><div class="stat-value" id="ds-s">—</div><div class="stat-label">Societies</div></div>
+        <div class="stat-card blue"><div class="stat-icon">🏠</div><div class="stat-value" id="ds-m">—</div><div class="stat-label">Members</div></div>
+        <div class="stat-card purple"><div class="stat-icon">🛡️</div><div class="stat-value" id="ds-g">—</div><div class="stat-label">Guards</div></div>
+        <div class="stat-card orange"><div class="stat-icon">🚶</div><div class="stat-value" id="ds-v">—</div><div class="stat-label">Visitors</div></div>
+        <div class="stat-card green"><div class="stat-icon">✅</div><div class="stat-value" id="ds-a">—</div><div class="stat-label">Approved</div></div>
+        <div class="stat-card red"><div class="stat-icon">⏳</div><div class="stat-value" id="ds-p">—</div><div class="stat-label">Pending</div></div>
+      </div>
+      <div class="card">
+        <div class="header-bar">
+          <span style="font-size:16px;font-weight:600">Societies Summary</span>
+          <button class="btn btn-primary btn-sm" onclick="showPage('createSociety')">+ New Society</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Name</th><th>Address</th><th>Members</th><th>Guards</th><th>Admins</th><th>Actions</th></tr></thead>
+            <tbody id="dashTable"><tr><td colspan="7" style="text-align:center;padding:30px"><div class="spinner"></div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- SOCIETIES -->
+    <div class="page" id="page-societies">
+      <div class="page-title">Societies</div>
+      <div class="page-sub">All onboarded societies</div>
+      <div class="header-bar">
+        <div></div>
+        <button class="btn btn-primary" onclick="showPage('createSociety')">+ Onboard Society</button>
+      </div>
+      <div class="society-grid" id="societyGrid"><div style="padding:40px"><div class="spinner"></div></div></div>
+    </div>
+
+    <!-- USERS -->
+    <div class="page" id="page-users">
+      <div class="page-title">Users</div>
+      <div class="page-sub">All users across all societies</div>
+      <div class="filter-bar">
+        <div class="filter-chip active" onclick="filterUsers('all',this)">All</div>
+        <div class="filter-chip" onclick="filterUsers('admin',this)">Admins</div>
+        <div class="filter-chip" onclick="filterUsers('security',this)">Guards</div>
+        <div class="filter-chip" onclick="filterUsers('member',this)">Members</div>
+        <div class="search-wrap" style="margin-left:auto">
+          <span class="search-icon">🔍</span>
+          <input class="form-input" id="userSearch" placeholder="Search name or phone..." oninput="renderUsersTable()" style="padding-left:36px;width:240px">
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Flat</th><th>Role</th><th>Society</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="usersTable"><tr><td colspan="8" style="text-align:center;padding:30px"><div class="spinner"></div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PENDING -->
+    <div class="page" id="page-pending">
+      <div class="page-title">Pending Approvals</div>
+      <div class="page-sub">Member registrations awaiting approval</div>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Name</th><th>Phone</th><th>Flat</th><th>Society</th><th>Registered</th><th>Actions</th></tr></thead>
+            <tbody id="pendingTable"><tr><td colspan="7" style="text-align:center;padding:30px"><div class="spinner"></div></td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- CREATE SOCIETY -->
+    <div class="page" id="page-createSociety">
+      <div class="page-title">Onboard Society</div>
+      <div class="page-sub">Register a new society on VMF</div>
+      <div class="card" style="max-width:560px">
+        <div class="form-grid">
+          <div class="form-group full"><div class="form-label">Society Name</div><input class="form-input" id="soc-name" placeholder="e.g. Green Valley Apartments"></div>
+          <div class="form-group full"><div class="form-label">Full Address</div><input class="form-input" id="soc-addr" placeholder="Street, City, State - PIN"></div>
+        </div>
+        <div style="margin-top:20px;display:flex;gap:12px">
+          <button class="btn btn-primary" onclick="createSociety()">Create Society</button>
+          <button class="btn btn-ghost" onclick="showPage('societies')">Cancel</button>
+        </div>
+        <div class="alert success" id="soc-ok"></div>
+        <div class="alert error"   id="soc-err"></div>
+      </div>
+    </div>
+
+    <!-- CREATE ADMIN -->
+    <div class="page" id="page-createAdmin">
+      <div class="page-title">Create Admin Account</div>
+      <div class="page-sub">Society-level admin — manages members, guards and approvals</div>
+      <div class="card" style="max-width:560px">
+        <div class="form-grid">
+          <div class="form-group full"><div class="form-label">Society</div><select class="form-select" id="admin-soc"><option value="">Select Society</option></select></div>
+          <div class="form-group"><div class="form-label">Admin Name</div><input class="form-input" id="admin-name" placeholder="Full name"></div>
+          <div class="form-group"><div class="form-label">Phone (Login Username)</div><input class="form-input" id="admin-phone" placeholder="10-digit mobile" maxlength="10" type="tel"></div>
+          <div class="form-group full"><div class="form-label">Default Password</div><input class="form-input" id="admin-pass" type="password" placeholder="Min 4 characters"></div>
+        </div>
+        <div style="margin-top:20px;display:flex;gap:12px">
+          <button class="btn btn-primary" onclick="doCreateAdmin()">Create Admin</button>
+          <button class="btn btn-ghost" onclick="showPage('users')">Cancel</button>
+        </div>
+        <div class="alert success" id="admin-ok"></div>
+        <div class="alert error"   id="admin-err"></div>
+      </div>
+    </div>
+
+    <!-- CREATE GUARD -->
+    <div class="page" id="page-createGuard">
+      <div class="page-title">Create Guard Account</div>
+      <div class="page-sub">Security guard — logs visitors, manages gate entry</div>
+      <div class="card" style="max-width:560px">
+        <div class="form-grid">
+          <div class="form-group full"><div class="form-label">Society</div><select class="form-select" id="guard-soc"><option value="">Select Society</option></select></div>
+          <div class="form-group"><div class="form-label">Guard Name</div><input class="form-input" id="guard-name" placeholder="Full name"></div>
+          <div class="form-group"><div class="form-label">Phone (Login Username)</div><input class="form-input" id="guard-phone" placeholder="10-digit mobile" maxlength="10" type="tel"></div>
+          <div class="form-group full"><div class="form-label">Default Password</div><input class="form-input" id="guard-pass" type="password" placeholder="Min 4 characters"></div>
+        </div>
+        <div style="margin-top:20px;display:flex;gap:12px">
+          <button class="btn btn-primary" onclick="doCreateGuard()">Create Guard</button>
+          <button class="btn btn-ghost" onclick="showPage('users')">Cancel</button>
+        </div>
+        <div class="alert success" id="guard-ok"></div>
+        <div class="alert error"   id="guard-err"></div>
+      </div>
+    </div>
+
+    <!-- REPORTS -->
+    <div class="page" id="page-reports">
+      <div class="page-title">Reports</div>
+      <div class="page-sub">View and export data across all societies</div>
+      <div class="tab-strip">
+        <div class="tab active" onclick="showReport('societies',this)">Societies</div>
+        <div class="tab" onclick="showReport('admins',this)">Admins</div>
+        <div class="tab" onclick="showReport('guards',this)">Guards</div>
+        <div class="tab" onclick="showReport('members',this)">Members</div>
+        <div class="tab" onclick="showReport('visitors',this)">Visitors</div>
+      </div>
+      <div class="card">
+        <div class="export-bar"><button class="btn btn-ghost btn-sm" onclick="exportCSV()">⬇ Export CSV</button></div>
+        <div class="table-wrap" id="reportWrap"><div class="empty-state"><div class="empty-icon">📑</div><p>Select a tab above</p></div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODALS -->
+<div class="modal-overlay" id="mDelete">
+  <div class="modal">
+    <div class="modal-title">⚠️ Delete User</div>
+    <p class="modal-sub">Permanently delete <strong id="delName" style="color:var(--text)"></strong>? This cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeM('mDelete')">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmDel()">Delete</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="mDelSoc">
+  <div class="modal">
+    <div class="modal-title">⚠️ Delete Society</div>
+    <p class="modal-sub">Delete <strong id="delSocName" style="color:var(--text)"></strong>? This cannot be undone.</p>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeM('mDelSoc')">Cancel</button>
+      <button class="btn btn-danger" onclick="confirmDelSoc()">Delete Society</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="mEdit">
+  <div class="modal">
+    <div class="modal-title">✏️ Modify User</div>
+    <input type="hidden" id="edit-id">
+    <div class="form-grid">
+      <div class="form-group"><div class="form-label">Name</div><input class="form-input" id="edit-name" placeholder="Full name"></div>
+      <div class="form-group"><div class="form-label">Flat No</div><input class="form-input" id="edit-flat" placeholder="e.g. B01-101"></div>
+      <div class="form-group full"><div class="form-label">Society</div><select class="form-select" id="edit-soc"><option value="">No Society</option></select></div>
+      <div class="form-group">
+        <div class="form-label">Role</div>
+        <select class="form-select" id="edit-role">
+          <option value="member">Member</option>
+          <option value="security">Guard (Security)</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="form-group"><div class="form-label">Status</div>
+        <select class="form-select" id="edit-status">
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+          <option value="pending">Pending</option>
+        </select>
+      </div>
+      <div class="form-group full">
+        <div class="form-label">New Password <span style="color:var(--text3);text-transform:none;font-weight:400">(leave blank to keep current)</span></div>
+        <input class="form-input" id="edit-pass" type="password" placeholder="New password (optional)">
+      </div>
+    </div>
+    <div class="alert success" id="edit-ok"></div>
+    <div class="alert error"   id="edit-err"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeM('mEdit')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEdit()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'https://vmf-backend.onrender.com';
+let allUsers = [], allSocieties = [], usersFilter = 'all', dashPeriod = 'day';
+let delUserId = null, delSocId = null, curReport = 'societies';
+
+// AUTH
+async function doLogin() {
+  const phone = document.getElementById('loginUser').value.trim();
+  const pass  = document.getElementById('loginPass').value;
+  const err   = document.getElementById('loginError');
+  if (!phone || !pass) { err.textContent = 'Enter phone and password.'; err.style.display = 'block'; return; }
+  try {
+    const r = await fetch(API + '/user/login', {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify({ phone, password: pass }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.detail || 'Invalid credentials');
+    if (d.role !== 'superadmin') throw new Error('Access denied. Superadmin only.');
+    err.style.display = 'none';
+    document.getElementById('loginPage').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    loadDashboard();
+  } catch(e) {
+    err.textContent = e.message || 'Invalid credentials. Please try again.';
+    err.style.display = 'block';
+    setTimeout(() => err.style.display = 'none', 4000);
+  }
+}
+function doLogout() {
+  document.getElementById('loginPage').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+
+// NAV
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id)?.classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.getAttribute('onclick')?.includes("'" + id + "'")) n.classList.add('active');
+  });
+  ({ societies: loadSocieties, users: loadUsers, pending: loadPending,
+     createAdmin: () => fillSocDrop('admin-soc'),
+     createGuard: () => fillSocDrop('guard-soc'),
+     reports: () => showReport('societies', document.querySelector('.tab'))
+  })[id]?.();
+}
+
+// DASHBOARD
+function setDashPeriod(p, el) {
+  dashPeriod = p;
+  document.querySelectorAll('#page-dashboard .filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active'); loadDashboard();
+}
+async function loadDashboard() {
+  const [socs, users, met] = await Promise.all([
+    get('/society/list'), get('/user/list/all'), get('/visitor/dashboard/metrics?period=' + dashPeriod)
+  ]);
+  allSocieties = socs; allUsers = users;
+  set('ds-s', socs.length);
+  set('ds-m', users.filter(u=>u.role==='member').length);
+  set('ds-g', users.filter(u=>u.role==='security').length);
+  set('ds-v', met.total??0); set('ds-a', met.approved??0); set('ds-p', met.pending??0);
+
+  document.getElementById('dashTable').innerHTML = !socs.length
+    ? `<tr><td colspan="7" style="text-align:center;color:var(--text2);padding:30px">No societies yet</td></tr>`
+    : socs.map(s => {
+        const su = users.filter(u => u.society_id===s.id || u.society_name===s.name);
+        return `<tr>
+          <td style="color:var(--text3);font-family:monospace">#${s.id}</td>
+          <td><strong>${esc(s.name)}</strong></td>
+          <td style="color:var(--text2);font-size:12px">${esc(s.address)}</td>
+          <td>${su.filter(u=>u.role==='member').length}</td>
+          <td>${su.filter(u=>u.role==='security').length}</td>
+          <td>${su.filter(u=>u.role==='admin').length}</td>
+          <td style="display:flex;gap:4px">
+            <button class="btn btn-ghost btn-sm" onclick="showPage('users')">Users</button>
+            <button class="btn btn-danger btn-sm" onclick="openDelSoc(${s.id},'${esc(s.name)}')">Delete</button>
+          </td>
+        </tr>`;
+      }).join('');
+}
+
+// SOCIETIES
+async function loadSocieties() {
+  const grid = document.getElementById('societyGrid');
+  grid.innerHTML = '<div style="padding:40px"><div class="spinner"></div></div>';
+  const [socs, users] = await Promise.all([get('/society/list'), get('/user/list/all')]);
+  allSocieties = socs; allUsers = users;
+  if (!socs.length) { grid.innerHTML = '<div class="empty-state"><div class="empty-icon">🏘️</div><p>No societies yet</p></div>'; return; }
+  grid.innerHTML = socs.map(s => {
+    const su = users.filter(u => u.society_id===s.id || u.society_name===s.name);
+    return `<div class="society-card">
+      <div class="society-name">🏘️ ${esc(s.name)}</div>
+      <div class="society-id">ID: ${s.id}</div>
+      <div class="society-addr">📍 ${esc(s.address)}</div>
+      <div class="society-stats">
+        <div class="society-stat"><div class="society-stat-val">${su.filter(u=>u.role==='member').length}</div><div class="society-stat-lbl">Members</div></div>
+        <div class="society-stat"><div class="society-stat-val">${su.filter(u=>u.role==='security').length}</div><div class="society-stat-lbl">Guards</div></div>
+        <div class="society-stat"><div class="society-stat-val">${su.filter(u=>u.role==='admin').length}</div><div class="society-stat-lbl">Admins</div></div>
+      </div>
+      <div class="society-actions">
+        <button class="btn btn-ghost btn-sm" onclick="viewSocUsers(${s.id})">Users</button>
+        <button class="btn btn-blue btn-sm"  onclick="showPage('createAdmin');setSoc('admin-soc',${s.id})">Add Admin</button>
+        <button class="btn btn-warning btn-sm" onclick="showPage('createGuard');setSoc('guard-soc',${s.id})">Add Guard</button>
+        <button class="btn btn-danger btn-sm" onclick="openDelSoc(${s.id},'${esc(s.name)}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function viewSocUsers(id) { showPage('users'); setTimeout(() => renderUsersTable(id), 200); }
+
+// USERS
+async function loadUsers() {
+  allUsers = await get('/user/list/all');
+  renderUsersTable();
+}
+function filterUsers(r, el) {
+  usersFilter = r;
+  document.querySelectorAll('#page-users .filter-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active'); renderUsersTable();
+}
+function renderUsersTable(socId = null) {
+  const q = (document.getElementById('userSearch')?.value || '').toLowerCase();
+  let f = allUsers;
+  if (usersFilter !== 'all') f = f.filter(u => u.role === usersFilter);
+  if (socId) f = f.filter(u => u.society_id === socId);
+  if (q) f = f.filter(u => u.name?.toLowerCase().includes(q) || u.phone?.includes(q));
+  const tb = document.getElementById('usersTable');
+  tb.innerHTML = !f.length
+    ? `<tr><td colspan="8" style="text-align:center;color:var(--text2);padding:30px">No users found</td></tr>`
+    : f.map(u => `<tr>
+        <td style="color:var(--text3);font-family:monospace">#${u.id}</td>
+        <td><strong>${esc(u.name)}</strong></td>
+        <td style="font-family:monospace;font-size:12px">${u.phone}</td>
+        <td style="color:var(--text2)">${u.flat_no||'—'}</td>
+        <td><span class="badge ${u.role}">${u.role}</span></td>
+        <td style="color:var(--text2);font-size:12px">${u.society_name||'—'}</td>
+        <td><span class="badge ${u.status}">${u.status}</span></td>
+        <td><div style="display:flex;gap:4px">
+          <button class="btn btn-warning btn-sm" onclick="openEdit(${u.id})">Edit</button>
+          <button class="btn btn-danger btn-sm"  onclick="openDel(${u.id},'${esc(u.name)}')">Delete</button>
+        </div></td>
+      </tr>`).join('');
+}
+
+// PENDING
+async function loadPending() {
+  const users = await get('/user/pending/list');
+  const tb = document.getElementById('pendingTable');
+  tb.innerHTML = !users.length
+    ? `<tr><td colspan="7" style="text-align:center;color:var(--text2);padding:30px">No pending registrations 🎉</td></tr>`
+    : users.map(u => `<tr>
+        <td style="color:var(--text3)">#${u.id}</td>
+        <td><strong>${esc(u.name)}</strong></td>
+        <td style="font-family:monospace;font-size:12px">${u.phone}</td>
+        <td>${u.flat_no}</td>
+        <td style="color:var(--text2)">${u.society_name||'—'}</td>
+        <td style="color:var(--text2);font-size:12px">${u.created_at?new Date(u.created_at).toLocaleDateString('en-IN'):'—'}</td>
+        <td><div style="display:flex;gap:6px">
+          <button class="btn btn-primary btn-sm" onclick="actUser(${u.id},'approved',this)">✅ Approve</button>
+          <button class="btn btn-danger btn-sm"  onclick="actUser(${u.id},'rejected',this)">❌ Reject</button>
+        </div></td>
+      </tr>`).join('');
+}
+async function actUser(id, action, btn) {
+  btn.disabled = true; btn.textContent = '...';
+  await post('/user/approve', {user_id:id, action}).catch(()=>{});
+  loadPending();
+}
+
+// CREATE SOCIETY
+async function createSociety() {
+  const name = val('soc-name'), addr = val('soc-addr');
+  hide('soc-ok'); hide('soc-err');
+  if (!name || !addr) { showA('soc-err','Please fill all fields'); return; }
+  try {
+    const d = await post('/society/create', {name, address:addr});
+    showA('soc-ok', `✅ Society "${d.name}" created!\nID: ${d.id}`);
+    clr('soc-name'); clr('soc-addr');
+  } catch(e) { showA('soc-err', e.message); }
+}
+
+// CREATE ADMIN
+async function fillSocDrop(selId) {
+  const sel = document.getElementById(selId);
+  const socs = await get('/society/list').catch(()=>[]);
+  allSocieties = socs;
+  sel.innerHTML = '<option value="">Select Society</option>' +
+    socs.map(s=>`<option value="${s.id}" data-name="${esc(s.name)}">${s.name}</option>`).join('');
+}
+function setSoc(selId, id) { const s = document.getElementById(selId); if(s) s.value = id; }
+
+async function doCreateAdmin() {
+  const sel = document.getElementById('admin-soc');
+  const socId = parseInt(sel.value), socName = sel.options[sel.selectedIndex]?.dataset.name||'';
+  const name = val('admin-name'), phone = val('admin-phone'), pass = document.getElementById('admin-pass').value;
+  hide('admin-ok'); hide('admin-err');
+  if (!socId||!name||!phone||!pass) { showA('admin-err','Please fill all fields'); return; }
+  if (!/^\d{10}$/.test(phone)) { showA('admin-err','Enter valid 10-digit phone'); return; }
+  try {
+    const d = await post('/user/create-guard', {name,phone,password:pass,flat_no:'ADMIN',role:'admin',society_id:socId,society_name:socName});
+    showA('admin-ok', `✅ Admin "${d.name}" created for ${socName}!\nPhone: ${d.phone} | Login: phone + password`);
+    clr('admin-name'); clr('admin-phone'); document.getElementById('admin-pass').value='';
+  } catch(e) { showA('admin-err', e.message); }
+}
+
+// CREATE GUARD
+async function doCreateGuard() {
+  const sel = document.getElementById('guard-soc');
+  const socId = parseInt(sel.value), socName = sel.options[sel.selectedIndex]?.dataset.name||'';
+  const name = val('guard-name'), phone = val('guard-phone'), pass = document.getElementById('guard-pass').value;
+  hide('guard-ok'); hide('guard-err');
+  if (!socId||!name||!phone||!pass) { showA('guard-err','Please fill all fields'); return; }
+  if (!/^\d{10}$/.test(phone)) { showA('guard-err','Enter valid 10-digit phone'); return; }
+  try {
+    const d = await post('/user/create-guard', {name,phone,password:pass,flat_no:'GATE',role:'security',society_id:socId,society_name:socName});
+    showA('guard-ok', `✅ Guard "${d.name}" created for ${socName}!\nPhone: ${d.phone}\nPassword: set by admin. Guard can change it from profile.`);
+    clr('guard-name'); clr('guard-phone'); document.getElementById('guard-pass').value='';
+  } catch(e) { showA('guard-err', e.message); }
+}
+
+// EDIT USER
+async function openEdit(id) {
+  const u = allUsers.find(u=>u.id===id); if(!u) return;
+  document.getElementById('edit-id').value   = id;
+  document.getElementById('edit-name').value = u.name||'';
+  document.getElementById('edit-flat').value = u.flat_no||'';
+  document.getElementById('edit-role').value = u.role||'member';
+  document.getElementById('edit-status').value = u.status||'active';
+  document.getElementById('edit-pass').value = '';
+  hide('edit-ok'); hide('edit-err');
+  const sel = document.getElementById('edit-soc');
+  const socs = await get('/society/list').catch(()=>[]);
+  sel.innerHTML = '<option value="">No Society</option>' +
+    socs.map(s=>`<option value="${s.id}" data-name="${esc(s.name)}" ${u.society_id===s.id?'selected':''}>${s.name}</option>`).join('');
+  document.getElementById('mEdit').classList.add('open');
+}
+async function saveEdit() {
+  const id     = parseInt(document.getElementById('edit-id').value);
+  const status = document.getElementById('edit-status').value;
+  const role   = document.getElementById('edit-role').value;
+  const pass   = document.getElementById('edit-pass').value;
+  const u      = allUsers.find(u=>u.id===id);
+  hide('edit-ok'); hide('edit-err');
+  try {
+    if (u && u.status !== status) {
+      await post('/user/approve', {user_id:id, action: status==='active'?'approved':'rejected'});
+    }
+    if (u && u.role !== role) {
+      await fetch(`${API}/user/update-role?user_id=${id}&role=${role}`, {method:'POST'});
+    }
+    if (pass.length >= 4) {
+      await post('/user/change-password', {user_id:id, new_password:pass});
+    }
+    showA('edit-ok','✅ User updated successfully!');
+    allUsers = await get('/user/list/all').catch(()=>allUsers);
+    renderUsersTable();
+  } catch(e) { showA('edit-err', e.message||'Update failed'); }
+}
+
+// DELETE USER
+function openDel(id, name) { delUserId=id; document.getElementById('delName').textContent=name; document.getElementById('mDelete').classList.add('open'); }
+async function confirmDel() {
+  await fetch(`${API}/user/${delUserId}`,{method:'DELETE'}).catch(()=>{});
+  closeM('mDelete'); loadUsers();
+}
+
+// DELETE SOCIETY
+function openDelSoc(id, name) { delSocId=id; document.getElementById('delSocName').textContent=name; document.getElementById('mDelSoc').classList.add('open'); }
+async function confirmDelSoc() {
+  await fetch(`${API}/society/${delSocId}`,{method:'DELETE'}).catch(()=>{});
+  closeM('mDelSoc'); loadSocieties(); loadDashboard();
+}
+
+// REPORTS
+async function showReport(type, el) {
+  curReport = type;
+  if (el) { document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); el.classList.add('active'); }
+  const wrap = document.getElementById('reportWrap');
+  wrap.innerHTML = '<div class="spinner" style="margin:20px auto;display:block"></div>';
+  const [socs, users] = await Promise.all([get('/society/list'), get('/user/list/all')]);
+  allSocieties=socs; allUsers=users;
+  let rows=[], hdrs=[];
+  if (type==='societies') {
+    hdrs=['ID','Name','Address','Members','Guards','Admins'];
+    rows=socs.map(s=>{const su=users.filter(u=>u.society_id===s.id||u.society_name===s.name);return[s.id,s.name,s.address,su.filter(u=>u.role==='member').length,su.filter(u=>u.role==='security').length,su.filter(u=>u.role==='admin').length];});
+  } else if (type==='admins') {
+    hdrs=['ID','Name','Phone','Society','Status'];
+    rows=users.filter(u=>u.role==='admin').map(u=>[u.id,u.name,u.phone,u.society_name||'—',u.status]);
+  } else if (type==='guards') {
+    hdrs=['ID','Name','Phone','Society','Status'];
+    rows=users.filter(u=>u.role==='security').map(u=>[u.id,u.name,u.phone,u.society_name||'—',u.status]);
+  } else if (type==='members') {
+    hdrs=['ID','Name','Phone','Flat','Society','Status'];
+    rows=users.filter(u=>u.role==='member').map(u=>[u.id,u.name,u.phone,u.flat_no||'—',u.society_name||'—',u.status]);
+  } else if (type==='visitors') {
+    const vs = await get('/visitor/list?limit=100').catch(()=>[]);
+    hdrs=['ID','Name','Phone','Flat','Type','Status','Check-in','Check-out'];
+    rows=(Array.isArray(vs)?vs:[]).map(v=>[v.id,v.visitor_name,v.phone,v.flat_no,v.visitor_type,v.status,v.checkin_time||'—',v.checkout_time||'—']);
+  }
+  if (!rows.length) { wrap.innerHTML='<div class="empty-state"><div class="empty-icon">📭</div><p>No records</p></div>'; return; }
+  wrap.innerHTML=`<table><thead><tr>${hdrs.map(h=>`<th>${h}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+}
+function exportCSV() {
+  const t = document.querySelector('#reportWrap table'); if(!t) return;
+  const csv = [...t.querySelectorAll('tr')].map(r=>[...r.querySelectorAll('th,td')].map(c=>`"${c.textContent.trim()}"`).join(',')).join('\n');
+  const a = document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`vmf_${curReport}_${new Date().toISOString().split('T')[0]}.csv`; a.click();
+}
+
+// HELPERS
+function closeM(id) { document.getElementById(id).classList.remove('open'); delUserId=delSocId=null; }
+async function get(path) { const r=await fetch(API+path); return r.json().catch(()=>[]); }
+async function post(path, body) {
+  const r = await fetch(API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d = await r.json(); if(!r.ok) throw new Error(d.detail||'Failed'); return d;
+}
+function val(id) { return document.getElementById(id)?.value.trim()||''; }
+function clr(id) { const e=document.getElementById(id); if(e) e.value=''; }
+function set(id, v) { const e=document.getElementById(id); if(e) e.textContent=v; }
+function hide(id) { const e=typeof id==='string'?document.getElementById(id):id; if(e) e.style.display='none'; }
+function showA(id, msg) { const e=document.getElementById(id); if(!e) return; e.textContent=msg; e.style.display='block'; setTimeout(()=>e.style.display='none',6000); }
+function esc(s) { return String(s||'').replace(/'/g,"\\'").replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+['mDelete','mDelSoc','mEdit'].forEach(id => {
+  document.getElementById(id)?.addEventListener('click', function(e) { if(e.target===this) closeM(id); });
+});
+</script>
+</body>
+</html>
